@@ -1921,6 +1921,21 @@ list(decision = decision, p_value = p_value)
 
 ---
 
+---
+
+## Contributions
+
+Corrections, additions, and clearer translations are welcome.
+
+You can contribute by:
+
+1. Opening an Issue to report an error or suggest an addition.
+2. Forking this repository.
+3. Creating a branch for your change.
+4. Submitting a pull request with a brief explanation of the statistical or programming rationale.
+
+When possible, please verify that examples run in a current Python environment and identify any important differences in defaults between R and Python.
+
 ## Suggested workflow for an R user
 
 **Python**
