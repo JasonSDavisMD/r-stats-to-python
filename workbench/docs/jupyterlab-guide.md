@@ -182,5 +182,9 @@ don't change underneath you.
   leftover hook from the temporary Codespace in Part 1. Run
   `rm .git/hooks/pre-push`, then push again. (Newer copies of the template
   install Git LFS, so this no longer happens.)
+* **`stats: command not found` in a terminal:** the terminal did not activate
+  the workspace environment. Run `uv run stats find "..."`, or make every
+  terminal activate it (older workspaces; newer templates do this for you):
+  `echo 'source /workspaces/my-stats-work/.venv/bin/activate' >> ~/.bashrc && source ~/.bashrc`
 * **Anything else:** `python -m statsbench.envcheck` prints the interpreter,
   library versions, add-ons and catalog status. Include it in a bug report.
