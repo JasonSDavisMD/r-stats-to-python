@@ -9,7 +9,7 @@ build/
 dist/
 
 # Local data caches: keep raw course data out of Git
-data/
+/data/
 *.parquet
 *.feather
 
