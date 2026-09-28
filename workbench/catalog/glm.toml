@@ -1,0 +1,121 @@
+# Topic: glm -- logistic regression and other GLMs (statsmodels), plus known-coefficient prediction.
+# Key distinction: FIT from (X, y) with a GLM  vs  EVALUATE given coefficients with expit.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "glm-binomial"
+title = "Fit logistic regression (binomial GLM) with coefficient summary"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.api as sm\nimport statsmodels.formula.api as smf"
+call = "smf.glm('y ~ x1 + x2', data=df, family=sm.families.Binomial()).fit()"
+aliases = ["logistic regression", "glm binomial", "fit logistic regression with coefficient summary", "logit model", "maximum likelihood logistic"]
+r = ["glm(family = binomial)", "glm"]
+inputs = "Formula; DataFrame with 0/1 (or two-level) response."
+returns = "GLMResults: .params, .bse, .pvalues, .deviance, .llf, .predict() (probabilities)."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from scipy.special import expit
+
+rng = np.random.default_rng(8)
+df = pd.DataFrame({"x1": rng.normal(size=300), "x2": rng.normal(size=300)})
+df["y"] = rng.binomial(1, expit(-0.5 + 1.5 * df["x1"] - 1.0 * df["x2"]))
+model = smf.glm("y ~ x1 + x2", data=df, family=sm.families.Binomial()).fit()
+print(model.summary())
+print(model.predict(df.head(3)))      # probabilities, like predict(type = "response")
+'''
+caveats = [
+    "This ESTIMATES coefficients from data. If the problem GIVES you coefficients, do not fit anything: see logistic-predict-known-params.",
+    "Unpenalized, like R. (sklearn LogisticRegression is L2-penalized by default.)",
+    "model.predict returns probabilities; R's predict.glm default is the link (log-odds) scale.",
+]
+see_also = ["smf-logit", "logistic-predict-known-params", "sk-logistic", "minimize"]
+recipe = "examples/03_logistic_nll_convexity.py"
+docs = "https://www.statsmodels.org/stable/glm.html"
+
+[[entry]]
+id = "smf-logit"
+title = "Logistic regression via the discrete-choice Logit model"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.logit('y ~ x1 + x2', data=df).fit()"
+aliases = ["logit regression", "logistic regression marginal effects", "pseudo r squared"]
+r = ["glm(family = binomial)"]
+inputs = "Formula; DataFrame with 0/1 response."
+returns = "LogitResults: .params, .summary(), .get_margeff(), .prsquared."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from scipy.special import expit
+
+rng = np.random.default_rng(9)
+df = pd.DataFrame({"x1": rng.normal(size=300)})
+df["y"] = rng.binomial(1, expit(0.3 + 1.2 * df["x1"]))
+model = smf.logit("y ~ x1", data=df).fit(disp=False)
+print(model.params, model.prsquared)
+'''
+caveats = ["Same estimates as glm-binomial. The statsmodels MODEL Logit is not scipy.special.logit (a function)."]
+see_also = ["glm-binomial", "logit"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.discrete.discrete_model.Logit.html"
+
+[[entry]]
+id = "logistic-predict-known-params"
+title = "Logistic probabilities from GIVEN coefficients (no fitting)"
+kind = "evaluate"
+library = "NumPy / SciPy"
+import = "import numpy as np\nfrom scipy.special import expit"
+call = "expit(X_with_ones @ beta)"
+aliases = ["probability from given coefficients", "use supplied coefficients", "predict with known parameters", "logistic probabilities with supplied coefficients"]
+r = ["plogis(X %*% beta)", "predict(type = 'response')"]
+inputs = "Coefficient vector beta (intercept first) and design rows with a leading 1."
+returns = "Probabilities, one per row."
+example = '''
+import numpy as np
+from scipy.special import expit
+
+beta = np.array([-1.0, 0.5, 2.0])            # GIVEN: intercept, b1, b2
+X = np.array([[1.0, 2.0, 0.0],               # leading 1 = intercept
+              [1.0, 0.0, 1.0]])
+log_odds = X @ beta
+probability = expit(log_odds)
+predicted_class = np.where(probability > 0.5, 1, 0)   # state the tie rule
+print(log_odds, probability, predicted_class)
+'''
+caveats = [
+    "If a feature value is not given in the question, the problem is under-specified: state the assumption instead of reusing a value from another question.",
+    "A fitted statsmodels model can evaluate new rows too: model.predict(new_df). Use that only after you actually fit.",
+]
+see_also = ["expit", "np-where", "glm-binomial"]
+recipe = "examples/01_logistic_known_coefficients.py"
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.expit.html"
+
+[[entry]]
+id = "glm-poisson"
+title = "Poisson regression for counts"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.api as sm\nimport statsmodels.formula.api as smf"
+call = "smf.glm('count ~ x', data=df, family=sm.families.Poisson()).fit()"
+aliases = ["count regression", "poisson glm", "log link", "rate model offset"]
+r = ["glm(family = poisson)"]
+inputs = "Formula; DataFrame with non-negative integer response."
+returns = "GLMResults."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(10)
+df = pd.DataFrame({"x": rng.uniform(0, 2, 200)})
+df["count"] = rng.poisson(np.exp(0.5 + 0.8 * df["x"]))
+model = smf.glm("count ~ x", data=df, family=sm.families.Poisson()).fit()
+print(model.params)
+'''
+see_also = ["glm-binomial"]
+docs = "https://www.statsmodels.org/stable/glm.html#families"

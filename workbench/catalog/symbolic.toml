@@ -1,0 +1,133 @@
+# Topic: symbolic -- exact algebra with SymPy (equations, inequalities, derivatives).
+# Key distinction: SymPy works on SYMBOLS (unknowns); NumPy works on NUMBERS (arrays).
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "sympy-solve"
+title = "Solve an equation for an unknown symbol exactly"
+kind = "solve"
+library = "SymPy"
+import = "import sympy as sp"
+call = "sp.solve(sp.Eq(lhs, rhs), x)"
+aliases = ["solve for x", "decision boundary equation", "where log odds equals zero", "invert formula", "closed form"]
+r = ["(no base R equivalent; Ryacas)"]
+inputs = "An equation built from sp.symbols; the symbol to solve for."
+returns = "List of solutions (possibly empty)."
+example = '''
+import sympy as sp
+
+x1, x2 = sp.symbols("x1 x2", real=True)
+b0, b1, b2 = sp.Rational(-3), sp.Rational(2), sp.Rational(0)   # given; b2 = 0
+log_odds = b0 + b1 * x1 + b2 * x2
+print(sp.solve(sp.Eq(log_odds, 0), x1))   # [3/2]  -> boundary is the line x1 = 3/2
+print(sp.solve(sp.Eq(log_odds, 0), x2))   # []     -> x2 does not appear: no x2 boundary
+'''
+caveats = [
+    "Use sp.Rational or integers for exact answers; floats give floating-point answers.",
+    "An empty list can mean the symbol vanished (coefficient zero), not that you made an error.",
+    "For the REGION where a class is predicted (an inequality), use sympy-solveset.",
+]
+see_also = ["sympy-solveset", "sympy-lambdify", "brentq"]
+recipe = "examples/02_logistic_decision_boundary.py"
+docs = "https://docs.sympy.org/latest/modules/solvers/solvers.html"
+
+[[entry]]
+id = "sympy-solveset"
+title = "Solve an inequality: decision region of a classifier"
+kind = "solve"
+library = "SymPy"
+import = "import sympy as sp"
+call = "sp.solveset(log_odds >= 0, x, domain=sp.S.Reals)"
+aliases = ["decision region", "classifier decision boundary", "solve classifier decision boundary", "inequality", "when is class 1 predicted", "set of x where probability above cutoff"]
+r = []
+inputs = "A relational (<, <=, >, >=) in ONE symbol; a domain."
+returns = "A SymPy Set (Interval, Union, EmptySet, Reals)."
+example = '''
+import sympy as sp
+
+x1 = sp.symbols("x1", real=True)
+log_odds = -3 + 2 * x1
+class1_ties_in = sp.solveset(log_odds >= 0, x1, domain=sp.S.Reals)   # equality -> class 1
+class1_strict = sp.solveset(log_odds > 0, x1, domain=sp.S.Reals)     # equality -> class 0
+print(class1_ties_in, class1_strict)   # Interval(3/2, oo)  Interval.open(3/2, oo)
+print(sp.Rational(3, 2) in class1_ties_in, sp.Rational(3, 2) in class1_strict)
+'''
+caveats = [
+    "p >= 0.5 is equivalent to log_odds >= 0 because expit is increasing, so solve in log-odds (linear) form.",
+    "A negative slope flips the direction; solveset handles that for you.",
+    "Multi-variable inequalities: solve for one variable treating the others as symbols, or plot the region.",
+]
+see_also = ["sympy-solve", "np-where", "decision-boundary-display"]
+recipe = "examples/02_logistic_decision_boundary.py"
+docs = "https://docs.sympy.org/latest/modules/solvers/solveset.html"
+
+[[entry]]
+id = "sympy-diff"
+title = "Symbolic derivative / gradient"
+kind = "solve"
+library = "SymPy"
+import = "import sympy as sp"
+call = "sp.diff(expr, x)"
+aliases = ["derivative", "gradient", "score function", "differentiate"]
+r = ["D", "deriv"]
+inputs = "Expression and symbol(s)."
+returns = "Expression."
+example = '''
+import sympy as sp
+
+b, x, y = sp.symbols("b x y", real=True)
+nll_term = -(y * b * x - sp.log(1 + sp.exp(b * x)))   # one logistic observation
+print(sp.simplify(sp.diff(nll_term, b)))
+'''
+see_also = ["sympy-hessian", "sympy-lambdify"]
+docs = "https://docs.sympy.org/latest/tutorials/intro-tutorial/calculus.html"
+
+[[entry]]
+id = "sympy-hessian"
+title = "Symbolic Hessian matrix (second derivatives) for convexity arguments"
+kind = "solve"
+library = "SymPy"
+import = "import sympy as sp"
+call = "sp.hessian(expr, [b0, b1])"
+aliases = ["second derivative matrix", "convexity proof", "is negative log likelihood convex", "hessian"]
+r = ["optimHess", "numDeriv::hessian"]
+inputs = "Scalar expression; list of symbols."
+returns = "SymPy Matrix."
+example = '''
+import sympy as sp
+
+b0, b1, x = sp.symbols("b0 b1 x", real=True)
+eta = b0 + b1 * x
+nll_one = sp.log(1 + sp.exp(eta))            # y-dependent part is linear, drops out
+H = sp.simplify(sp.hessian(nll_one, [b0, b1]))
+print(H)                                     # p(1-p) * [[1, x], [x, x**2]]
+print(sp.simplify(H.det()))                  # 0 -> PSD (rank one) for a single point
+'''
+caveats = ["For a numerical check at specific values, evaluate the Hessian with lambdify then np.linalg.eigvalsh."]
+see_also = ["np-eigvalsh", "sympy-diff"]
+recipe = "examples/03_logistic_nll_convexity.py"
+docs = "https://docs.sympy.org/latest/modules/matrices/dense.html#sympy.matrices.dense.hessian"
+
+[[entry]]
+id = "sympy-lambdify"
+title = "Turn a SymPy expression into a fast NumPy function"
+kind = "compute"
+library = "SymPy"
+import = "import sympy as sp"
+call = "f = sp.lambdify((x,), expr, 'numpy')"
+aliases = ["evaluate symbolic expression numerically", "substitute numbers", "subs", "symbolic to numeric"]
+r = ["eval(parse(...))"]
+inputs = "Symbols tuple, expression."
+returns = "Python function accepting NumPy arrays."
+example = '''
+import numpy as np
+import sympy as sp
+
+x = sp.symbols("x")
+expr = 1 / (1 + sp.exp(-(-1.5 + 0.8 * x)))
+f = sp.lambdify((x,), expr, "numpy")
+print(f(np.array([0.0, 1.875, 4.0])))
+print(expr.subs(x, 1.875).evalf())       # single-value alternative
+'''
+see_also = ["sympy-solve", "expit"]
+docs = "https://docs.sympy.org/latest/modules/utilities/lambdify.html"

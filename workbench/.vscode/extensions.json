@@ -1,0 +1,14 @@
+{
+  // Offered automatically when this folder is opened in VS Code.
+  // Python + Pylance: IntelliSense, hover docs, signature help, debugging.
+  // Jupyter: notebooks, "# %%" cells, Interactive Window, Variables + Data Viewer.
+  // Python Environments: create/select the .venv from the sidebar.
+  // Data Wrangler (optional): richer DataFrame viewer/cleaner.
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-toolsai.jupyter",
+    "ms-python.vscode-python-envs",
+    "ms-toolsai.datawrangler"
+  ]
+}

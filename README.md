@@ -15,6 +15,8 @@ The guide emphasizes the Python libraries that most closely reproduce familiar R
 
 > **Guiding principle:** If the goal is inference like `lm()` plus `summary()`, start with **statsmodels**. If the goal is production prediction, preprocessing pipelines, cross-validation, or machine learning, use **scikit-learn**.
 
+> **Companion workspace:** [`workbench/`](workbench/README.md) is a VS Code workspace built from this guide. It adds a searchable task-to-function catalog (`psl find "R plogis"`), runnable worked examples, and a pinned Python environment for CS 598 PSL.
+
 ## Contents
 
 1. [Installation and imports](#1-installation-and-imports)

@@ -1,0 +1,99 @@
+# Topic: optimization -- numerical minimization and root finding (SciPy).
+# Key distinction: optimize = the computer SEARCHES for a number; solve (SymPy) = an exact formula.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "minimize"
+title = "Minimize a function of several parameters (e.g. a negative log-likelihood)"
+kind = "optimize"
+library = "SciPy"
+import = "from scipy.optimize import minimize"
+call = "minimize(objective, x0, method='BFGS')"
+aliases = ["optim", "maximum likelihood by hand", "negative log likelihood", "numerical optimization", "gradient descent", "mle"]
+r = ["optim", "nlm", "nlminb"]
+inputs = "objective(params) -> float; starting guess x0 (array); optional jac=gradient."
+returns = "OptimizeResult: .x (minimizer), .fun (minimum), .success, .message."
+example = '''
+import numpy as np
+from scipy.optimize import minimize
+
+def objective(params):
+    a, b = params
+    return (a - 1.0) ** 2 + 10 * (b + 2.0) ** 2
+
+result = minimize(objective, x0=np.zeros(2), method="BFGS")
+print(result.x, result.fun, result.success)
+assert np.allclose(result.x, [1.0, -2.0], atol=1e-4)
+'''
+caveats = [
+    "To MAXIMIZE a likelihood, minimize its negative.",
+    "Always check result.success and compare against a library fit (e.g. GLM) when one exists.",
+    "A convex objective (PSD Hessian) has one minimum, so the starting point does not matter.",
+]
+see_also = ["log-expit", "glm-binomial", "np-eigvalsh", "minimize-scalar"]
+recipe = "examples/03_logistic_nll_convexity.py"
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html"
+
+[[entry]]
+id = "minimize-scalar"
+title = "Minimize a function of one variable"
+kind = "optimize"
+library = "SciPy"
+import = "from scipy.optimize import minimize_scalar"
+call = "minimize_scalar(f, bounds=(lo, hi), method='bounded')"
+aliases = ["optimize one parameter", "one dimensional minimum", "optimize"]
+r = ["optimize", "optimise"]
+inputs = "f(x) -> float; optional bounds."
+returns = "OptimizeResult with .x and .fun."
+example = '''
+from scipy.optimize import minimize_scalar
+
+result = minimize_scalar(lambda t: (t - 2.5) ** 2 + 1, bounds=(0, 10), method="bounded")
+print(result.x, result.fun)
+'''
+see_also = ["minimize"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize_scalar.html"
+
+[[entry]]
+id = "brentq"
+title = "Numerical root of a 1-D equation f(x) = 0 in a bracket"
+kind = "optimize"
+library = "SciPy"
+import = "from scipy.optimize import brentq"
+call = "brentq(f, lo, hi)"
+aliases = ["root finding", "uniroot", "find x where probability equals", "solve equation numerically", "invert a function"]
+r = ["uniroot"]
+inputs = "f(x) -> float with f(lo) and f(hi) of opposite sign."
+returns = "float root."
+example = '''
+from scipy.optimize import brentq
+from scipy.special import expit
+
+b0, b1 = -1.5, 0.8
+# x where the fitted probability equals 0.7 (numerically)
+x_star = brentq(lambda x: expit(b0 + b1 * x) - 0.7, -100, 100)
+print(x_star)
+'''
+caveats = ["If an exact formula exists (e.g. x = (logit(p) - b0)/b1), sympy-solve gives it symbolically; brentq is for when it does not."]
+see_also = ["sympy-solve", "root-scalar"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.brentq.html"
+
+[[entry]]
+id = "root-scalar"
+title = "General scalar root finding (bracketing or Newton)"
+kind = "optimize"
+library = "SciPy"
+import = "from scipy.optimize import root_scalar"
+call = "root_scalar(f, bracket=[lo, hi])"
+aliases = ["newton method", "root of function"]
+r = ["uniroot"]
+inputs = "f; bracket or x0 (+ fprime for Newton)."
+returns = "RootResults with .root, .converged."
+example = '''
+from scipy.optimize import root_scalar
+
+result = root_scalar(lambda x: x ** 3 - 2 * x - 5, bracket=[2, 3])
+print(result.root, result.converged)
+'''
+see_also = ["brentq"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.root_scalar.html"

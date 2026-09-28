@@ -1,0 +1,43 @@
+# pyproject.toml -- single source of truth for the PSL Workbench environment.
+# `uv sync` reads this file, resolves versions into uv.lock, and installs
+# everything (including this project, editable) into ./.venv.
+
+[project]
+name = "psl-workbench"
+version = "0.1.0"
+description = "Python-first, RStudio-like statistical learning workbench for VS Code (CS 598 PSL)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "sympy>=1.13",
+    "pandas>=2.2",
+    "statsmodels>=0.14",
+    "scikit-learn>=1.5",
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
+    "ipykernel>=6.29",
+]
+
+[project.scripts]
+# `psl find "inverse logit"` in the activated terminal.
+psl = "psl.finder.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "nbclient>=0.10",
+    "nbformat>=5.10",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
