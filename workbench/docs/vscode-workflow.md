@@ -1,5 +1,7 @@
 # VS Code workflow: the RStudio features, and where they are
 
+New to VS Code after RStudio? Read [rstudio-users-start-here.md](rstudio-users-start-here.md) first. It sets up the four-pane layout this page assumes.
+
 Keyboard shortcuts are the Windows defaults. Mac users: replace Ctrl with Cmd.
 
 ## Two ways to write code
