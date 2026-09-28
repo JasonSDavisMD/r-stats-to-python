@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # post-create.sh -- runs once when a Codespace / dev container is created.
-# Installs uv, builds workbench/.venv from uv.lock, and runs the environment
-# check. It only touches workbench/, and a failure here leaves the container
-# usable: rerun this script, or run `uv sync` in workbench/ by hand.
+# Installs uv, builds workbench/.venv from uv.lock (core libraries + JupyterLab),
+# and runs the environment check. Optional add-ons are NOT installed here, to
+# keep Codespaces fast: add them with  uv sync --extra deep  (or --all-extras).
+# It only touches workbench/, and a failure here leaves the container usable:
+# rerun this script, or run `uv sync --group lab` in workbench/ by hand.
 set -euo pipefail
 
 WORKBENCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../workbench" && pwd)"
@@ -13,9 +15,9 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 cd "$WORKBENCH"
-uv sync --frozen                 # exact versions from uv.lock, into ./.venv
-uv run python -m psl.envcheck
+uv sync --frozen --group lab     # exact versions from uv.lock, into ./.venv
+uv run --no-sync python -m statsbench.envcheck
 
 echo
-echo "Workbench ready. Open examples/00_workflow_tour.py and click 'Run Cell'."
-echo "Search the toolbox from a NEW terminal (Ctrl+Shift+\`):  psl find \"inverse logit\""
+echo "Workbench ready. JupyterLab starts automatically: Ports tab -> 8888 -> Open in Browser."
+echo "Search the toolbox from a NEW terminal (Ctrl+Shift+\`):  stats find \"inverse logit\""

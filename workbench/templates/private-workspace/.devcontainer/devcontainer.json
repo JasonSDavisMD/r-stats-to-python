@@ -1,0 +1,26 @@
+// Private workspace Codespace: JupyterLab + statsbench, started automatically.
+// Setup lives in the two scripts next to this file.
+{
+  "name": "my-stats-work (JupyterLab + statsbench)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "containerEnv": { "UV_LINK_MODE": "copy" },
+
+  // Once, when the Codespace is created: install uv and build .venv.
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  // Every start, including after Stop/Resume: bring JupyterLab back up.
+  "postStartCommand": "bash .devcontainer/start-lab.sh",
+
+  "forwardPorts": [8888],
+  "portsAttributes": {
+    "8888": { "label": "JupyterLab", "onAutoForward": "openBrowser" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-toolsai.jupyter"],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
+      }
+    }
+  }
+}

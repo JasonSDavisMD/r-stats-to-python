@@ -24,8 +24,8 @@ text cell.
 | `?function` / F1 help | **Hover** over the name for its docstring. In a notebook: `expit?` (docstring) or `expit??` (source) |
 | `help(function)` | `help(expit)` in any cell |
 | View a function's source | **F12** go to definition; **Alt+F12** peek inline |
-| Which library has it? | `psl find "<task>"` in the terminal, or the **psl: find** task |
-| Official docs | the `docs:` link in `psl show <id>` (Ctrl+click opens it) |
+| Which library has it? | `stats find "<task>"` in the terminal, or the **stats: find** task |
+| Official docs | the `docs:` link in `stats show <id>` (Ctrl+click opens it) |
 
 Hover and hints come from **Pylance**, which reads the installed packages in
 `.venv`. That's why selecting the right interpreter matters.
@@ -64,14 +64,14 @@ you re-run that cell. Two habits prevent confusion:
 * **Ctrl+`** opens the integrated terminal with `.venv` already active.
 * The status bar (bottom right) shows the selected interpreter. The notebook
   kernel picker is at the top right. Both should show `.venv`.
-* `python -m psl.envcheck` prints the interpreter path. In a notebook,
-  `from psl.envcheck import main; main()` should print the same path.
+* `python -m statsbench.envcheck` prints the interpreter path. In a notebook,
+  `from statsbench.envcheck import main; main()` should print the same path.
 
 ## End-to-end question workflow
 
-1. **Search.** `psl find "probabilities from given coefficients"`. The top
+1. **Search.** `stats find "probabilities from given coefficients"`. The top
    hit is `logistic-predict-known-params` (kind **evaluate**: nothing to fit).
-2. **Locate the call.** `psl show logistic-predict-known-params` gives the
+2. **Locate the call.** `stats show logistic-predict-known-params` gives the
    import, the call, what goes in and comes out, the tie-rule caveat, and the
    recipe `examples/01_logistic_known_coefficients.py`.
 3. **Inspect the signature.** Type `expit(` in a cell and read the hints, or

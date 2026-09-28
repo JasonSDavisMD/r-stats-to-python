@@ -5,14 +5,14 @@ separate file.
 
 ## Add a function to an existing topic
 
-1. Open the topic file, e.g. `catalog/trees.toml`, and copy an existing `[[entry]]`.
+1. Open the topic file, e.g. `src/statsbench/catalog/trees.toml`, and copy an existing `[[entry]]`.
 2. Fill in the fields (reference below). Keep `example` short and
    **self-contained**: it must import everything it uses and run on its own.
 3. Test it:
 
    ```powershell
    uv run pytest tests/test_catalog.py -q
-   uv run psl find "<a phrase you would type>"
+   uv run stats find "<a phrase you would type>"
    ```
 
    The test executes your example against the installed library versions.
@@ -23,17 +23,20 @@ separate file.
 
 ## Add a new topic
 
-Create `catalog/<topic>.toml`. The file name becomes the topic name (`psl
-list --topic <topic>`). Start the file with a comment line stating the topic's
+Create `src/statsbench/catalog/<topic>.toml`. The file name becomes the topic name
+(`stats list --topic <topic>`). Start the file with a comment line stating the topic's
 key distinction, as the existing files do. No registration step is needed.
 If a file has a syntax error, only that file is skipped, and the problem is
-reported as a warning by `psl` and by `python -m psl.envcheck`.
+reported as a warning by `stats` and by `python -m statsbench.envcheck`.
+
+The catalog lives inside the package so it ships with every install (including
+private workspaces that install statsbench from GitHub).
 
 ## Entry fields
 
 | Field | Required | Meaning |
 |---|---|---|
-| `id` | yes | Unique short name used by `psl show` and `see_also` (kebab-case) |
+| `id` | yes | Unique short name used by `stats show` and `see_also` (kebab-case) |
 | `title` | yes | One line: the task, in words you'd search for |
 | `kind` | yes | `fit`, `evaluate`, `optimize`, `solve`, `compute` or `visualize` (see operation-kinds.md) |
 | `library` | yes | Display name, e.g. `SciPy` |
@@ -47,6 +50,8 @@ reported as a warning by `psl` and by `python -m psl.envcheck`.
 | `caveats` | no | Differences from R defaults, tie rules, common mistakes |
 | `see_also` | no | Related entry ids (must exist; tested) |
 | `recipe` | no | Path to a worked example in `examples/` (must exist; tested) |
+| `requires` | with `extra` | Importable modules beyond the core install, e.g. `["torch"]`. Tests skip the example when they are missing |
+| `extra` | with `requires` | The optional add-on that provides them (`ml`, `deep`, `bayes`, `stats-extra`), which must exist in `pyproject.toml` (tested) |
 
 ## Add a worked example
 
@@ -58,7 +63,7 @@ file in `examples/` automatically.
 
 ## Add a recipe (rarely)
 
-Only add a helper to `src/psl/recipes/` when **no single library call**
+Only add a helper to `src/statsbench/recipes/` when **no single library call**
 performs the step. `best_subset` exists because scikit-learn has no
 exhaustive subset search. A recipe must:
 

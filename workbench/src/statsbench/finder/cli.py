@@ -1,7 +1,7 @@
-"""Command-line front end for the catalog: ``psl find | show | r | list | kinds``.
+"""Command-line front end for the catalog: ``stats find | show | r | list | kinds``.
 
-Run from the VS Code integrated terminal (with .venv active), from the
-"psl: find" VS Code task, or as ``python -m psl ...``. Output is plain
+Run from any terminal with the project environment active, from the
+"stats: find" VS Code task, or as ``python -m statsbench ...``. Output is plain
 ASCII so it renders in Windows PowerShell and cmd.exe.
 """
 
@@ -29,6 +29,8 @@ def _brief(rank: int, entry: Entry) -> str:
         f"   {entry.call}",
     ]
     extras = []
+    if entry.extra:
+        extras.append(f"needs add-on: {entry.extra}")
     if entry.r:
         extras.append("R: " + ", ".join(entry.r))
     if entry.recipe:
@@ -64,9 +66,16 @@ def _full(entry: Entry) -> str:
         parts += [_wrap("- " + c, "  ") for c in entry.caveats]
     if entry.see_also:
         parts.append("")
-        parts.append("SEE ALSO " + ", ".join(entry.see_also) + "   (psl show <id>)")
+        parts.append("SEE ALSO " + ", ".join(entry.see_also) + "   (stats show <id>)")
     if entry.recipe:
         parts.append("RECIPE   " + entry.recipe)
+    if entry.extra:
+        missing = entry.missing_modules()
+        state = "NOT installed here" if missing else "installed"
+        parts.append(
+            f"ADD-ON   {entry.extra} ({state}): uv sync --extra {entry.extra}"
+            f"   or   pip install \"statsbench[{entry.extra}]\""
+        )
     parts.append("DOCS     " + entry.docs)
     return "\n".join(parts)
 
@@ -80,10 +89,10 @@ def cmd_find(catalog: Catalog, args: argparse.Namespace) -> int:
     query = " ".join(args.query)
     hits = Index(catalog).search(query, limit=args.limit, kind=args.kind)
     if not hits:
-        print(f'No match for "{query}". Try fewer words, an R name, or `psl list`.')
+        print(f'No match for "{query}". Try fewer words, an R name, or `stats list`.')
         return 1
     print("\n\n".join(_brief(i, h.entry) for i, h in enumerate(hits, start=1)))
-    print(f"\nDetails and runnable example: psl show {hits[0].entry.id}")
+    print(f"\nDetails and runnable example: stats show {hits[0].entry.id}")
     return 0
 
 
@@ -92,7 +101,7 @@ def cmd_show(catalog: Catalog, args: argparse.Namespace) -> int:
     if entry is None:
         ids = [e.id for e in catalog.entries]
         close = difflib.get_close_matches(args.id, ids, n=3)
-        hint = f" Did you mean: {', '.join(close)}?" if close else " Try `psl find`."
+        hint = f" Did you mean: {', '.join(close)}?" if close else " Try `stats find`."
         print(f"No entry with id '{args.id}'.{hint}")
         return 1
     print(entry.example if args.code else _full(entry))
@@ -105,7 +114,7 @@ def cmd_r(catalog: Catalog, args: argparse.Namespace) -> int:
         wanted = args.name.lower()
         rows = [(n, e) for n, e in rows if wanted in n.lower()]
         if not rows:
-            print(f"No R mapping for '{args.name}'. Try `psl find {args.name}`.")
+            print(f"No R mapping for '{args.name}'. Try `stats find {args.name}`.")
             return 1
     rows.sort(key=lambda row: row[0].lower())
     width = min(max(len(n) for n, _ in rows), 34)
@@ -132,18 +141,18 @@ def cmd_kinds(catalog: Catalog, args: argparse.Namespace) -> int:
     for kind, meaning in KINDS.items():
         count = sum(1 for e in catalog.entries if e.kind == kind)
         print(f"{kind:<9} {meaning}  ({count} entries)")
-    print("\nFilter any search: psl find \"logistic\" --kind evaluate")
+    print("\nFilter any search: stats find \"logistic\" --kind evaluate")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="psl",
+        prog="stats",
         description="Find the right Python library call for a statistics task.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("find", help='search tasks, e.g. psl find "inverse logit"')
+    p = sub.add_parser("find", help='search tasks, e.g. stats find "inverse logit"')
     p.add_argument("query", nargs="+")
     p.add_argument("-n", "--limit", type=int, default=5)
     p.add_argument("-k", "--kind", choices=sorted(KINDS))

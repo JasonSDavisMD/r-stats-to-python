@@ -1,0 +1,423 @@
+# Topic: deep_learning -- tensors, autograd and small neural networks (PyTorch).
+# Key distinction: YOU write the training loop (forward, loss, backward, step); PyTorch defaults to float32, R and NumPy to double.
+# Add-on: uv sync --extra deep
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "torch-tensor"
+title = "Create a PyTorch tensor and convert to and from NumPy"
+kind = "compute"
+library = "PyTorch"
+import = "import numpy as np\nimport torch"
+call = "torch.tensor(x, dtype=torch.float32) ; torch.from_numpy(a) ; t.detach().numpy()"
+aliases = ["pytorch", "torch", "tensor", "pytorch tensor", "numpy to tensor", "tensor to numpy", "float32 vs float64", "torch dtype", "convert array to tensor"]
+r = ["torch::torch_tensor", "torch::as_array", "as.array"]
+inputs = "A Python list or NumPy array (and optionally a dtype)."
+returns = "torch.Tensor with .shape, .dtype, .device; .numpy() gives back a NumPy array (CPU tensors only)."
+example = '''
+import numpy as np
+import torch
+
+a = np.array([[1.0, 2.0], [3.0, 4.0]])      # NumPy default: float64
+t64 = torch.from_numpy(a)                    # shares memory, keeps float64
+t32 = torch.tensor(a, dtype=torch.float32)   # copies; float32 is what nn layers expect
+print(t64.dtype, t32.dtype, t32.shape)
+
+t64[0, 0] = 100.0                            # from_numpy shares memory ...
+print(a[0, 0])                               # ... so the NumPy array changed too
+
+back = (t32 @ t32.T).detach().numpy()        # matrix product, then back to NumPy
+print(back)
+print(torch.tensor([1.0, 2.0]).dtype)        # a Python float list becomes float32
+assert np.allclose(back, np.array([[5.0, 11.0], [11.0, 25.0]]))
+'''
+caveats = [
+    "torch.tensor([1.0]) is float32, while NumPy and R use float64 (double). Mixing float64 data with an nn.Linear (float32 weights) raises a dtype error: convert with .float() or dtype=torch.float32.",
+    "torch.from_numpy and .numpy() SHARE memory with the array; torch.tensor(...) copies.",
+    "Call .detach() before .numpy() on a tensor that requires grad, and .cpu() first if it lives on a GPU.",
+    "Indexing is 0-based and t.shape is like dim() in R; there is no recycling, only NumPy-style broadcasting.",
+]
+see_also = ["torch-autograd", "torch-device-seed", "np-shape", "np-broadcasting"]
+docs = "https://pytorch.org/docs/stable/tensors.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-autograd"
+title = "Automatic differentiation: gradient of a function with autograd"
+kind = "compute"
+library = "PyTorch"
+import = "import torch"
+call = "x = torch.tensor(2.0, requires_grad=True) ; y = f(x) ; y.backward() ; x.grad"
+aliases = ["autograd", "automatic differentiation", "gradient", "derivative", "backpropagation", "backward", "requires_grad", "compute gradient numerically", "pytorch gradient"]
+r = ["torch::autograd_grad", "numDeriv::grad", "D"]
+inputs = "Leaf tensors with requires_grad=True; a scalar output built from them."
+returns = "x.grad holds d(output)/dx after output.backward()."
+example = '''
+import torch
+
+x = torch.tensor([0.5, 2.0], dtype=torch.float64, requires_grad=True)
+y = (x ** 3 + torch.sin(x)).sum()          # f(x) = sum(x^3 + sin x); scalar output
+y.backward()                               # fills x.grad
+analytic = 3 * x.detach() ** 2 + torch.cos(x.detach())
+print(x.grad, analytic)
+assert torch.allclose(x.grad, analytic)
+
+# Gradient of the log-likelihood of a Normal mean (score function)
+data = torch.tensor([1.0, 2.0, 4.0], dtype=torch.float64)
+mu = torch.tensor(1.0, dtype=torch.float64, requires_grad=True)
+loglik = torch.distributions.Normal(mu, 1.0).log_prob(data).sum()
+(grad_mu,) = torch.autograd.grad(loglik, mu)
+print(grad_mu.item(), (data - 1.0).sum().item())   # score = sum(x - mu)
+'''
+caveats = [
+    "backward() needs a SCALAR output; for a vector output sum it or pass a gradient argument.",
+    "Gradients ACCUMULATE in .grad across backward() calls: zero them (optimizer.zero_grad()) in a training loop.",
+    "This is exact derivative evaluation at a point, not symbolic: for a formula use sympy-diff.",
+]
+see_also = ["torch-tensor", "torch-linear-regression", "sympy-diff", "minimize"]
+docs = "https://pytorch.org/docs/stable/autograd.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-linear-regression"
+title = "Linear regression in PyTorch: nn.Linear, MSELoss and an optimizer training loop"
+kind = "fit"
+library = "PyTorch"
+import = "import torch\nfrom torch import nn"
+call = "model = nn.Linear(p, 1) ; opt = torch.optim.SGD(model.parameters(), lr=0.1) ; loss = nn.MSELoss()(model(X), y) ; opt.zero_grad() ; loss.backward() ; opt.step()"
+aliases = ["pytorch linear regression", "torch linear regression", "nn.Linear", "training loop", "gradient descent", "mse loss", "optimizer step", "sgd", "adam", "pytorch regression"]
+r = ["torch::nn_linear", "torch::optim_sgd", "keras::layer_dense"]
+inputs = "float32 X of shape (n, p) and y of shape (n, 1); learning rate; number of epochs."
+returns = "Fitted module: model.weight (1, p) and model.bias (1,) approximate the least-squares coefficients."
+example = '''
+import numpy as np
+import torch
+from torch import nn
+
+torch.manual_seed(0)
+torch.set_num_threads(1)
+rng = np.random.default_rng(0)
+X_np = rng.normal(size=(200, 2))
+y_np = 1.0 + X_np @ np.array([2.0, -3.0]) + rng.normal(scale=0.1, size=200)
+
+X = torch.tensor(X_np, dtype=torch.float32)
+y = torch.tensor(y_np, dtype=torch.float32).reshape(-1, 1)   # (n, 1) to match the output
+model = nn.Linear(2, 1)                  # y = X @ W.T + b
+loss_fn = nn.MSELoss()
+opt = torch.optim.SGD(model.parameters(), lr=0.1)
+for epoch in range(300):
+    opt.zero_grad()
+    loss = loss_fn(model(X), y)
+    loss.backward()
+    opt.step()
+
+# Compare with closed-form least squares
+design = np.column_stack([np.ones(200), X_np])
+beta_ls, *_ = np.linalg.lstsq(design, y_np, rcond=None)
+beta_torch = np.r_[model.bias.item(), model.weight.detach().numpy().ravel()]
+print("torch:", beta_torch.round(4), " lstsq:", beta_ls.round(4), " loss:", loss.item())
+assert np.allclose(beta_torch, beta_ls, atol=1e-3)
+'''
+caveats = [
+    "No standard errors, p-values or formula interface: for inference use smf-ols (R lm). Use this pattern to learn the training loop.",
+    "y must be shape (n, 1) like the model output; a (n,) target silently broadcasts to (n, n) in MSELoss (with a warning) and gives wrong fits.",
+    "Result depends on learning rate, epochs and random initialization; unscaled features make SGD slow or divergent.",
+    "Forgetting opt.zero_grad() accumulates gradients across iterations.",
+]
+see_also = ["smf-ols", "np-lstsq", "torch-autograd", "torch-logistic-regression", "torch-dataloader"]
+docs = "https://pytorch.org/docs/stable/generated/torch.nn.Linear.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-logistic-regression"
+title = "Logistic regression in PyTorch with BCEWithLogitsLoss (outputs are logits)"
+kind = "fit"
+library = "PyTorch"
+import = "import torch\nfrom torch import nn"
+call = "model = nn.Linear(p, 1) ; loss = nn.BCEWithLogitsLoss()(model(X), y) ; prob = torch.sigmoid(model(X_new))"
+aliases = ["pytorch logistic regression", "torch logistic regression", "BCEWithLogitsLoss", "binary cross entropy", "model outputs logits", "sigmoid", "log-odds output", "pytorch binary classification"]
+r = ["torch::nn_bce_with_logits_loss", "keras::loss_binary_crossentropy"]
+inputs = "float32 X (n, p); float32 0/1 targets y of shape (n, 1)."
+returns = "Module whose output is the LOGIT (log-odds); torch.sigmoid(logit) = expit(logit) = probability."
+example = '''
+import numpy as np
+import torch
+from torch import nn
+from scipy.special import expit
+
+torch.manual_seed(1)
+torch.set_num_threads(1)
+rng = np.random.default_rng(1)
+X_np = rng.normal(size=(500, 1))
+y_np = rng.binomial(1, expit(-0.5 + 2.0 * X_np[:, 0]))
+
+X = torch.tensor(X_np, dtype=torch.float32)
+y = torch.tensor(y_np, dtype=torch.float32).reshape(-1, 1)   # float targets, shape (n, 1)
+model = nn.Linear(1, 1)                  # output = b0 + b1 * x = log-odds (logit)
+loss_fn = nn.BCEWithLogitsLoss()         # sigmoid + binary cross-entropy, numerically stable
+opt = torch.optim.Adam(model.parameters(), lr=0.05)
+for epoch in range(400):
+    opt.zero_grad()
+    loss = loss_fn(model(X), y)
+    loss.backward()
+    opt.step()
+
+b0, b1 = model.bias.item(), model.weight.item()
+with torch.no_grad():
+    prob = torch.sigmoid(model(torch.tensor([[0.0], [1.0]])))
+print("intercept, slope:", round(b0, 3), round(b1, 3))
+print("P(y=1 | x=0, 1):", prob.ravel().numpy(), expit(np.array([b0, b0 + b1])))
+assert abs(b1 - 2.0) < 0.5
+'''
+caveats = [
+    "Do NOT put nn.Sigmoid() at the end of the model when using BCEWithLogitsLoss: the loss applies the sigmoid itself. Apply torch.sigmoid only for predicted probabilities.",
+    "Targets must be float (0.0/1.0), not int, and the same shape as the output.",
+    "Unpenalized maximum likelihood here, so estimates approach glm(family = binomial); an optimizer's weight_decay adds an L2 penalty like sklearn's default.",
+    "For coefficient tables, standard errors and p-values use glm-binomial instead.",
+]
+see_also = ["expit", "glm-binomial", "sk-logistic", "torch-linear-regression", "torch-mlp-classifier"]
+docs = "https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-mlp-classifier"
+title = "Small neural network (MLP) classifier with nn.Sequential, train and eval modes"
+kind = "fit"
+library = "PyTorch"
+import = "import torch\nfrom torch import nn"
+call = "nn.Sequential(nn.Linear(p, 16), nn.ReLU(), nn.Linear(16, k)) ; nn.CrossEntropyLoss() ; model.train() / model.eval()"
+aliases = ["pytorch neural network", "pytorch mlp", "torch neural network classifier", "deep learning pytorch", "nn.Sequential", "hidden layer relu", "dropout", "cross entropy loss", "train eval mode", "pytorch classifier"]
+r = ["keras::keras_model_sequential", "torch::nn_sequential", "keras::layer_dropout"]
+inputs = "float32 features X (n, p); integer (int64) class labels 0..k-1."
+returns = "Module whose output is k logits per row; argmax gives the class, softmax gives probabilities."
+example = '''
+import numpy as np
+import torch
+from torch import nn
+
+torch.manual_seed(2)
+torch.set_num_threads(1)
+rng = np.random.default_rng(2)
+X_np = rng.normal(size=(400, 2))
+y_np = (X_np[:, 0] ** 2 + X_np[:, 1] ** 2 > 1.4).astype(int)    # circle: not linearly separable
+
+X = torch.tensor(X_np, dtype=torch.float32)
+y = torch.tensor(y_np, dtype=torch.long)       # class indices, int64
+model = nn.Sequential(
+    nn.Linear(2, 16), nn.ReLU(),
+    nn.Dropout(p=0.1),                          # behaves differently in train vs eval
+    nn.Linear(16, 2),                           # 2 logits (one per class)
+)
+loss_fn = nn.CrossEntropyLoss()                 # softmax + negative log-likelihood
+opt = torch.optim.Adam(model.parameters(), lr=0.02)
+
+model.train()
+for epoch in range(300):
+    opt.zero_grad()
+    loss = loss_fn(model(X), y)
+    loss.backward()
+    opt.step()
+
+model.eval()                                    # turn off dropout for prediction
+with torch.no_grad():
+    logits = model(X)
+    prob = torch.softmax(logits, dim=1)
+    pred = logits.argmax(dim=1)
+accuracy = (pred == y).float().mean().item()
+print("training accuracy:", round(accuracy, 3), " first probs:", prob[:2].numpy().round(3))
+assert accuracy > 0.9
+'''
+caveats = [
+    "CrossEntropyLoss wants raw logits and int64 class indices (not one-hot, no softmax layer).",
+    "Call model.eval() before predicting: Dropout and BatchNorm behave differently in training mode. model.train() switches back.",
+    "Training accuracy is optimistic; hold out data (train-test-split) or cross-validate.",
+    "Results depend on the seed and initialization; small data sets rarely need a neural network (compare with sk-logistic or random-forest).",
+]
+see_also = ["torch-logistic-regression", "torch-dataloader", "torch-no-grad", "sk-logistic", "random-forest", "train-test-split"]
+docs = "https://pytorch.org/docs/stable/generated/torch.nn.Sequential.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-dataloader"
+title = "Mini-batches with TensorDataset and DataLoader"
+kind = "compute"
+library = "PyTorch"
+import = "import torch\nfrom torch.utils.data import TensorDataset, DataLoader"
+call = "loader = DataLoader(TensorDataset(X, y), batch_size=32, shuffle=True, generator=torch.Generator().manual_seed(0))"
+aliases = ["dataloader", "mini batch", "minibatch", "batch size", "stochastic gradient descent batches", "tensordataset", "shuffle batches", "epoch loop"]
+r = ["torch::dataloader", "torch::tensor_dataset", "keras::fit(batch_size = )"]
+inputs = "Tensors with the same first dimension; batch_size; shuffle."
+returns = "Iterable yielding (X_batch, y_batch) tuples; one full pass = one epoch."
+example = '''
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import TensorDataset, DataLoader
+
+torch.manual_seed(3)
+torch.set_num_threads(1)
+rng = np.random.default_rng(3)
+X = torch.tensor(rng.normal(size=(250, 3)), dtype=torch.float32)
+y = (X @ torch.tensor([[1.0], [-2.0], [0.5]]) + 0.1 * torch.randn(250, 1))
+
+loader = DataLoader(TensorDataset(X, y), batch_size=32, shuffle=True,
+                    generator=torch.Generator().manual_seed(0))   # reproducible shuffling
+xb, yb = next(iter(loader))
+print("batches per epoch:", len(loader), " batch shapes:", tuple(xb.shape), tuple(yb.shape))
+
+model = nn.Linear(3, 1)
+opt = torch.optim.SGD(model.parameters(), lr=0.05)
+loss_fn = nn.MSELoss()
+for epoch in range(20):
+    for xb, yb in loader:              # one optimizer step per mini-batch
+        opt.zero_grad()
+        loss_fn(model(xb), yb).backward()
+        opt.step()
+print("weights:", model.weight.detach().numpy().round(2))
+assert len(loader) == 8                # ceil(250 / 32); last batch has 26 rows
+assert torch.allclose(model.weight.detach(), torch.tensor([[1.0, -2.0, 0.5]]), atol=0.05)
+'''
+caveats = [
+    "The last batch is smaller unless drop_last=True.",
+    "shuffle=True uses the global torch RNG unless you pass generator=; set it for reproducible batches.",
+    "num_workers > 0 starts subprocesses (slow to start, tricky on Windows/notebooks); keep 0 for small data.",
+]
+see_also = ["torch-linear-regression", "torch-mlp-classifier", "torch-device-seed"]
+docs = "https://pytorch.org/docs/stable/data.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-device-seed"
+title = "Reproducibility and device selection in PyTorch (manual_seed; cuda, mps or cpu)"
+kind = "compute"
+library = "PyTorch"
+import = "import torch"
+call = "torch.manual_seed(0) ; device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu' ; model.to(device)"
+aliases = ["set seed pytorch", "random seed", "reproducible", "reproducibility", "gpu", "cuda", "mps apple silicon", "device", "move model to gpu", "deterministic"]
+r = ["torch::torch_manual_seed", "set.seed", "torch::cuda_is_available"]
+inputs = "An integer seed; a device string."
+returns = "Nothing (seeds the global generator); a torch.device to pass to .to(device)."
+example = '''
+import torch
+from torch import nn
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():          # Apple silicon GPU
+        return torch.device("mps")
+    return torch.device("cpu")
+
+device = pick_device()
+print("device:", device)
+
+torch.manual_seed(42)                     # seeds CPU and all GPUs
+first = torch.randn(3)
+torch.manual_seed(42)
+second = torch.randn(3)
+print(first, second)
+assert torch.equal(first, second)         # same seed -> same numbers
+
+torch.manual_seed(0)
+model = nn.Linear(2, 1).to(device)        # the model AND every input must be on the same device
+x = torch.ones(4, 2, device=device)
+print(model(x).detach().cpu().numpy().ravel())   # .cpu() before .numpy()
+'''
+caveats = [
+    "torch.manual_seed does not seed NumPy or Python's random: seed those separately (np.random.default_rng(seed)).",
+    "Same seed can still give different numbers on a different device, PyTorch version or thread count; torch.use_deterministic_algorithms(True) makes GPU ops deterministic where possible.",
+    "A model and its inputs on different devices raise 'Expected all tensors to be on the same device'.",
+]
+see_also = ["torch-tensor", "torch-dataloader", "rng-draws"]
+docs = "https://pytorch.org/docs/stable/notes/randomness.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-save-state-dict"
+title = "Save and load model weights (state_dict) with torch.save and torch.load"
+kind = "compute"
+library = "PyTorch"
+import = "import io\nimport torch"
+call = "torch.save(model.state_dict(), buffer_or_path) ; model.load_state_dict(torch.load(buffer_or_path, weights_only=True))"
+aliases = ["save model", "load model", "state_dict", "checkpoint", "serialize weights", "torch.save", "persist trained network"]
+r = ["torch::torch_save", "torch::torch_load", "saveRDS", "keras::save_model_hdf5"]
+inputs = "A model's state_dict (ordered dict of parameter tensors); a file path or file-like object."
+returns = "load_state_dict returns a report of missing/unexpected keys; the model now has the saved weights."
+example = '''
+import io
+import torch
+from torch import nn
+
+torch.manual_seed(4)
+model = nn.Sequential(nn.Linear(3, 4), nn.ReLU(), nn.Linear(4, 1))
+print(list(model.state_dict().keys()))          # parameter names -> tensors
+
+buffer = io.BytesIO()                           # in memory here; normally a path like "model.pt"
+torch.save(model.state_dict(), buffer)
+buffer.seek(0)
+
+clone = nn.Sequential(nn.Linear(3, 4), nn.ReLU(), nn.Linear(4, 1))   # same architecture
+clone.load_state_dict(torch.load(buffer, weights_only=True))
+clone.eval()
+x = torch.randn(5, 3)
+with torch.no_grad():
+    same = torch.equal(model(x), clone(x))
+print("identical predictions:", same)
+assert same
+'''
+caveats = [
+    "A state_dict holds only weights: rebuild the SAME architecture in code before load_state_dict.",
+    "torch.load(..., weights_only=True) (the default in PyTorch >= 2.6) refuses arbitrary pickled objects; only load untrusted files that way.",
+    "Load GPU-saved weights on a CPU machine with torch.load(path, map_location='cpu').",
+    "Call model.eval() after loading if you will predict.",
+]
+see_also = ["torch-mlp-classifier", "torch-no-grad"]
+docs = "https://pytorch.org/tutorials/beginner/saving_loading_models.html"
+requires = ["torch"]
+extra = "deep"
+
+[[entry]]
+id = "torch-no-grad"
+title = "Inference and prediction without gradients: torch.no_grad and model.eval"
+kind = "evaluate"
+library = "PyTorch"
+import = "import torch"
+call = "model.eval() ; with torch.no_grad(): pred = model(X_new)"
+aliases = ["no_grad", "inference mode", "predict pytorch", "pytorch prediction", "predict with trained network", "disable gradient", "torch predict new data"]
+r = ["predict", "torch::with_no_grad"]
+inputs = "A trained module and new inputs of the right dtype, shape and device."
+returns = "Output tensor with requires_grad=False (cheaper; convertible with .numpy())."
+example = '''
+import torch
+from torch import nn
+
+torch.manual_seed(5)
+model = nn.Sequential(nn.Linear(2, 8), nn.ReLU(), nn.Dropout(0.5), nn.Linear(8, 1))
+X_new = torch.randn(4, 2)
+
+out_grad = model(X_new)
+print("with graph:", out_grad.requires_grad)          # True: a computation graph was built
+
+model.eval()                                          # Dropout off -> deterministic output
+with torch.no_grad():                                 # no graph -> less memory, faster
+    pred1 = model(X_new)
+    pred2 = model(X_new)
+print("no_grad:", pred1.requires_grad, pred1.ravel().numpy())
+assert not pred1.requires_grad and torch.equal(pred1, pred2)
+'''
+caveats = [
+    "no_grad and eval() do different things: no_grad stops gradient tracking; eval() changes Dropout/BatchNorm behaviour. For prediction you usually want both.",
+    "torch.inference_mode() is a stricter, slightly faster alternative to no_grad.",
+    "Outputs are logits for models trained with BCEWithLogitsLoss/CrossEntropyLoss: apply sigmoid/softmax for probabilities.",
+]
+see_also = ["torch-mlp-classifier", "torch-save-state-dict", "torch-logistic-regression"]
+docs = "https://pytorch.org/docs/stable/generated/torch.no_grad.html"
+requires = ["torch"]
+extra = "deep"

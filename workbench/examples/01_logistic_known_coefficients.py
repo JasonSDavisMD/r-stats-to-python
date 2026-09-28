@@ -10,7 +10,7 @@
 # **Library choice:** nothing is estimated, so there is nothing to *fit*.
 # NumPy computes the log-odds `b0 + b1*x`, and `scipy.special.expit` maps
 # log-odds to probability (R: `plogis`).
-# `psl find "R plogis"` -> `expit`;  `psl show logistic-predict-known-params`.
+# `stats find "R plogis"` -> `expit`;  `stats show logistic-predict-known-params`.
 #
 # Run cells with Shift+Enter (Interactive Window) or "Run Cell" above each `# %%`.
 

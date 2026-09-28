@@ -1,6 +1,6 @@
 """A broken topic file or entry must not prevent the others from loading."""
 
-from psl.finder import load_catalog
+from statsbench.finder import load_catalog
 
 GOOD = '''
 [[entry]]

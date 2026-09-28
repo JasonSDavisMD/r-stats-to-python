@@ -11,7 +11,7 @@
 #
 # **Library choice:** SymPy (`sp.solve` for the boundary, `sp.solveset` for the
 # region), then NumPy/SciPy to check numerically, then Matplotlib to draw it.
-# `psl find "solve classifier decision boundary"`.
+# `stats find "solve classifier decision boundary"`.
 
 # %%
 import matplotlib.pyplot as plt

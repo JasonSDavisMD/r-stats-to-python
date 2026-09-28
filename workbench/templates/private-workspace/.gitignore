@@ -1,0 +1,12 @@
+# Environment and caches (recreated by `uv sync --group lab`)
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Data stays out of Git by default -- see data/README.md before changing this.
+data/*
+!data/README.md
+
+# Local secrets
+.env

@@ -9,7 +9,7 @@
 # `leaps::regsubsets`). Then EVALUATE each size's best model on the test rows.
 #
 # **Library choice:** there is no single sklearn/statsmodels call for exhaustive
-# best subset, so `psl.recipes.best_subset` loops over
+# best subset, so `statsbench.recipes.best_subset` loops over
 # `LinearRegression().fit(X[cols], y)`. Test error uses
 # `sklearn.metrics.mean_squared_error`. We refit the chosen columns *visibly*.
 
@@ -21,7 +21,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 
-from psl.recipes.best_subset import best_subset
+from statsbench.recipes.best_subset import best_subset
 
 # %%
 rng = np.random.default_rng(598)

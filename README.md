@@ -1,5 +1,20 @@
 # Translating Common R Statistical Operations to Python
 
+[![tests](https://github.com/JasonSDavisMD/r-stats-to-python/actions/workflows/tests.yml/badge.svg)](https://github.com/JasonSDavisMD/r-stats-to-python/actions/workflows/tests.yml)
+[![Launch in Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/JasonSDavisMD/r-stats-to-python/main?urlpath=lab/tree/workbench/start-here.ipynb)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/JasonSDavisMD/r-stats-to-python)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+This repository has two parts:
+
+| Part | What it is |
+|---|---|
+| **This guide** (below) | A narrative R-to-Python translation of common statistical workflows |
+| **[statsbench](workbench/README.md)** (`workbench/`) | A searchable, tested catalog across the Python scientific stack: type a task or an R name (`stats find "wilcox.test"`) and get the library, exact call, R differences and a runnable example. Use it in JupyterLab, VS Code, Binder or Codespaces |
+
+**Try statsbench now:** click **launch binder** above (no account needed; nothing is saved).
+**Use it for your own work:** see the [JupyterLab guide](workbench/docs/jupyterlab-guide.md).
+
 I have used R extensively for statistical analysis, and I am now working toward the same level of fluency in Python. The statistical concepts do not change, but the functions, object types, defaults, and modeling conventions often do. I created this guide to make that translation explicit.
 
 My goal is not simply to list Python commands. I want to show what each R operation becomes in Python, which library provides the closest equivalent, and where a literal translation would be misleading. I use `=` for assignment in every R example because that is how I write R and because it makes the comparison with Python easier to follow.
@@ -15,7 +30,6 @@ The guide emphasizes the Python libraries that most closely reproduce familiar R
 
 > **Guiding principle:** If the goal is inference like `lm()` plus `summary()`, start with **statsmodels**. If the goal is production prediction, preprocessing pipelines, cross-validation, or machine learning, use **scikit-learn**.
 
-> **Companion workspace:** [`workbench/`](workbench/README.md) is a VS Code workspace built from this guide. It adds a searchable task-to-function catalog (`psl find "R plogis"`), runnable worked examples, and a pinned Python environment for CS 598 PSL.
 
 ## Contents
 

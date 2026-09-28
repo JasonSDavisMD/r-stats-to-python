@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# postBuild -- Binder runs this once after installing requirements.txt.
+# Installs the statsbench toolkit itself (its dependencies are already pinned).
+set -euo pipefail
+pip install --no-deps --no-cache-dir ./workbench

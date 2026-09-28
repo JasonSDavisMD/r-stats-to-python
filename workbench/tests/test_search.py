@@ -2,7 +2,7 @@
 
 import pytest
 
-from psl.finder import Index
+from statsbench.finder import Index
 
 
 @pytest.fixture(scope="module")

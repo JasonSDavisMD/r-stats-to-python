@@ -1,0 +1,7 @@
+# Normalize line endings so files edited on Windows still work in Linux
+# containers (Codespaces, Binder, CI). Shell scripts MUST stay LF.
+* text=auto
+*.sh text eol=lf
+binder/postBuild text eol=lf
+*.bat text eol=crlf
+*.ipynb text eol=lf

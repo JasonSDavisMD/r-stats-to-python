@@ -1,0 +1,508 @@
+# Topic: numerics -- curve fitting, densities, quantiles, integrals, ODEs, decompositions (SciPy / NumPy).
+# Key distinction: R bundles these in base/stats with R defaults; SciPy/NumPy defaults often DIFFER, so name them explicitly.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "curve-fit"
+title = "Nonlinear least squares curve fitting with parameter standard errors"
+kind = "fit"
+library = "SciPy"
+import = "from scipy.optimize import curve_fit"
+call = "params, pcov = curve_fit(f, x, y, p0=start)"
+aliases = ["nls", "nonlinear regression", "nonlinear least squares", "fit a curve", "exponential decay fit", "dose response curve", "fit custom model to data"]
+r = ["nls", "minpack.lm::nlsLM"]
+inputs = "f(x, *params) -> predicted y (vectorized); x, y arrays; p0 = starting values (one per parameter); optional sigma=, bounds=."
+returns = "(params, pcov): best-fit array and its covariance matrix; standard errors = np.sqrt(np.diag(pcov))."
+example = '''
+import numpy as np
+from scipy.optimize import curve_fit
+
+rng = np.random.default_rng(3)
+x = np.linspace(0, 10, 50)
+y = 5.0 * np.exp(-0.4 * x) + 1.0 + rng.normal(0, 0.1, x.size)
+
+def model(x, a, k, c):              # parameters come AFTER x, as separate arguments
+    return a * np.exp(-k * x) + c
+
+params, pcov = curve_fit(model, x, y, p0=[1.0, 0.1, 0.0])
+se = np.sqrt(np.diag(pcov))         # same SEs as summary(nls(...))
+for name, est, s in zip(["a", "k", "c"], params, se):
+    print(f"{name} = {est:.3f}  (SE {s:.3f})")
+assert np.allclose(params, [5.0, 0.4, 1.0], atol=0.2)
+'''
+caveats = [
+    "If p0 is omitted every starting value is 1.0 (R nls REQUIRES start=). Bad starts can converge to nonsense; always pass p0.",
+    "Default absolute_sigma=False scales pcov by the residual variance, matching R nls SEs. Set absolute_sigma=True only when sigma= holds KNOWN measurement SDs.",
+    "No summary table, t-tests or confint: compute t = params / se and use scipy.stats.t with n - p df yourself, or fit with statsmodels if the model is linear in parameters.",
+    "Use bounds=(lower, upper) to keep rates positive; the method then switches from 'lm' to 'trf' (like nlsLM with lower/upper).",
+]
+see_also = ["minimize", "dist-fit-mle", "smf-ols"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html"
+
+[[entry]]
+id = "dist-fit-mle"
+title = "Fit a probability distribution to data by maximum likelihood"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.gamma.fit(x, floc=0)"
+aliases = ["fitdistr", "fit distribution", "maximum likelihood distribution fit", "estimate gamma shape and scale", "fit weibull to data", "fit lognormal", "mle of distribution parameters", "fitdistrplus"]
+r = ["MASS::fitdistr", "fitdistrplus::fitdist"]
+inputs = "1-D data x; optional fixed parameters floc=, fscale=, f0= (first shape); optional starting guesses as positional args."
+returns = "Tuple (shape(s)..., loc, scale). No standard errors."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(11)
+x = rng.gamma(shape=2.0, scale=3.0, size=500)
+
+shape, loc, scale = stats.gamma.fit(x, floc=0)       # 2-parameter gamma, like fitdistr(x, "gamma")
+print(f"shape={shape:.3f}  scale={scale:.3f}  rate={1/scale:.3f}")
+loglik = stats.gamma.logpdf(x, shape, loc, scale).sum()
+print("log-likelihood:", round(loglik, 2), " AIC:", round(-2 * loglik + 2 * 2, 2))
+assert loc == 0 and abs(shape - 2.0) < 0.4
+'''
+caveats = [
+    "SciPy distributions have an extra LOCATION parameter. Without floc=0 a gamma/Weibull/lognormal fit becomes a 3-parameter (shifted) fit, unlike MASS::fitdistr. Pass floc=0.",
+    "SciPy uses scale; R gamma uses rate by default (rate = 1/scale). Lognormal: s = sdlog, scale = exp(meanlog).",
+    "No standard errors are returned (fitdistr gives them). Get them from the inverse Hessian of the negative log-likelihood (e.g. via minimize) or bootstrap.",
+    "scipy.stats.fit(dist, x, bounds=...) is the newer interface: it needs bounds, returns a FitResult (.params, .nllf(), .plot()) and uses a global optimizer, so it is slower.",
+    "stats.norm.fit returns the MLE sd (divisor n), as fitdistr does, not sd(x) (divisor n - 1).",
+]
+see_also = ["norm-dist", "minimize", "gaussian-kde", "ecdf"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.rv_continuous.fit.html"
+
+[[entry]]
+id = "gaussian-kde"
+title = "Kernel density estimate of a sample (smooth histogram)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy.stats import gaussian_kde"
+call = "gaussian_kde(x, bw_method='scott')(grid)"
+aliases = ["density", "kde", "kernel density", "density estimate", "smooth density curve", "density plot", "bandwidth"]
+r = ["density", "bw.nrd0", "MASS::kde2d"]
+inputs = "Data x (1-D, or shape (d, n) for d-dimensional); bw_method = 'scott', 'silverman', a scalar FACTOR, or a callable."
+returns = "A gaussian_kde object; call it on grid points to get density values. .factor, .covariance give the bandwidth."
+example = '''
+import numpy as np
+from scipy.stats import gaussian_kde
+
+rng = np.random.default_rng(5)
+x = np.concatenate([rng.normal(0, 1, 300), rng.normal(4, 0.7, 200)])
+
+# Reproduce R's density(x) default bandwidth bw.nrd0
+sd = np.std(x, ddof=1)
+iqr = np.subtract(*np.quantile(x, [0.75, 0.25]))
+h_r = 0.9 * min(sd, iqr / 1.34) * x.size ** (-0.2)
+kde = gaussian_kde(x, bw_method=h_r / sd)          # bw_method is a FACTOR times sd, not the bandwidth
+
+grid = np.linspace(-4, 7, 512)
+dens = kde(grid)
+print("bandwidth:", round(h_r, 4), " kernel sd:", round(float(np.sqrt(kde.covariance[0, 0])), 4))
+print("area under curve:", round(np.trapezoid(dens, grid), 3))
+assert np.isclose(np.sqrt(kde.covariance[0, 0]), h_r)
+'''
+caveats = [
+    "Default bandwidth differs from R: SciPy uses Scott's rule sd * n^(-1/5); R density() uses bw.nrd0 = 0.9 * min(sd, IQR/1.34) * n^(-1/5). SciPy's curve is usually smoother.",
+    "A scalar bw_method is a multiplier of the data sd, NOT the bandwidth itself (R's bw= IS the bandwidth). Pass bandwidth / sd.",
+    "Only a Gaussian kernel. For other kernels or a density on a bounded range, see statsmodels.nonparametric.KDEUnivariate or sklearn KernelDensity.",
+    "You choose the evaluation grid; R density() picks 512 points automatically.",
+]
+see_also = ["ecdf", "dist-fit-mle", "np-quantile"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gaussian_kde.html"
+
+[[entry]]
+id = "ecdf"
+title = "Empirical cumulative distribution function (ECDF) of a sample"
+kind = "compute"
+library = "SciPy"
+import = "from scipy.stats import ecdf"
+call = "ecdf(x).cdf.evaluate(t)"
+aliases = ["empirical cdf", "empirical distribution function", "cumulative proportion", "proportion below a value", "ecdf plot"]
+r = ["ecdf", "plot.ecdf"]
+inputs = "1-D sample x (or scipy.stats.CensoredData for right-censored data)."
+returns = "ECDFResult: .cdf and .sf, each with .evaluate(t), .quantiles, .probabilities, .confidence_interval(), .plot(ax)."
+example = '''
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import ecdf
+
+rng = np.random.default_rng(2)
+x = rng.normal(10, 2, 200)
+
+res = ecdf(x)
+p = res.cdf.evaluate([8.0, 10.0, 12.0])      # like Fn <- ecdf(x); Fn(c(8, 10, 12))
+print(p)
+assert np.allclose(p, [np.mean(x <= t) for t in (8.0, 10.0, 12.0)])
+
+fig, ax = plt.subplots()
+res.cdf.plot(ax)                            # step plot, like plot(ecdf(x))
+plt.close(fig)
+'''
+caveats = [
+    "R's ecdf(x) returns a FUNCTION; SciPy returns an object: call .cdf.evaluate(t), not res(t).",
+    "Given CensoredData.right_censored(time, censored) it returns the Kaplan-Meier estimate (.sf); note censored=True means NOT observed, the opposite of R's status=1.",
+]
+see_also = ["np-quantile", "gaussian-kde", "kaplan-meier"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ecdf.html"
+
+[[entry]]
+id = "np-quantile"
+title = "Sample quantiles / percentiles with a chosen definition (R type=)"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np"
+call = "np.quantile(x, [0.25, 0.5, 0.75], method='linear')"
+aliases = ["quantile", "percentile", "quartiles", "median and iqr", "quantile type", "hyndman fan", "five number summary"]
+r = ["quantile", "quantile(x, type = 7)", "IQR", "fivenum"]
+inputs = "Array x; probabilities q in [0, 1] (np.percentile takes 0-100); method= one of the 9 Hyndman-Fan definitions."
+returns = "Float or array of quantiles."
+example = '''
+import numpy as np
+
+rng = np.random.default_rng(4)
+x = rng.exponential(2.0, 25)
+q = [0.1, 0.25, 0.5, 0.9]
+
+print("R type 7 (default):", np.quantile(x, q, method="linear"))
+print("R type 6 (SAS/SPSS):", np.quantile(x, q, method="weibull"))
+print("R type 2 (averaged):", np.quantile(x, q, method="averaged_inverted_cdf"))
+assert np.allclose(np.quantile(x, q), np.quantile(x, q, method="linear"))
+'''
+caveats = [
+    "NumPy's default method='linear' equals R's default type = 7, so plain calls agree.",
+    "Name map: type 1 'inverted_cdf', 2 'averaged_inverted_cdf', 3 'closest_observation', 4 'interpolated_inverted_cdf', 5 'hazen', 6 'weibull', 7 'linear', 8 'median_unbiased', 9 'normal_unbiased'.",
+    "The old keyword interpolation= is deprecated; use method=.",
+    "NaN in x gives NaN (R errors unless na.rm = TRUE); use np.nanquantile. pandas Series.quantile also defaults to type 7.",
+]
+see_also = ["ecdf", "df-inspect"]
+docs = "https://numpy.org/doc/stable/reference/generated/numpy.quantile.html"
+
+[[entry]]
+id = "quad-integrate"
+title = "Numerical integration of a function over an interval (definite integral)"
+kind = "compute"
+library = "SciPy"
+import = "import numpy as np\nfrom scipy.integrate import quad"
+call = "value, abs_error = quad(f, lower, upper)"
+aliases = ["integrate", "numerical integration", "definite integral", "area under a curve", "quadrature", "expected value by integration"]
+r = ["integrate"]
+inputs = "f(x) -> float; limits (may be -np.inf / np.inf); extra parameters via args=(...)."
+returns = "Tuple (value, estimated absolute error)."
+example = '''
+import numpy as np
+from scipy.integrate import quad
+from scipy.stats import norm
+
+value, err = quad(norm.pdf, -np.inf, 1.96)          # integrate(dnorm, -Inf, 1.96)
+print(value, err)
+assert np.isclose(value, norm.cdf(1.96))
+
+mean_gamma, _ = quad(lambda x, k: x * x ** (k - 1) * np.exp(-x), 0, np.inf, args=(3.0,))
+print("E[X] * Gamma(3):", mean_gamma)                 # = Gamma(4) = 6
+'''
+caveats = [
+    "Returns a plain tuple, not an object: R's integrate(...)$value is quad(...)[0].",
+    "Integrating data points (not a function)? Use np.trapezoid(y, x) or scipy.integrate.simpson; np.trapz was removed in NumPy 2.",
+    "Sharp peaks far from the bulk of an infinite range can be missed (same as R); split the range or pass points= for finite ranges.",
+]
+see_also = ["solve-ivp", "norm-dist"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.quad.html"
+
+[[entry]]
+id = "solve-ivp"
+title = "Solve a system of ordinary differential equations (ODE initial value problem)"
+kind = "compute"
+library = "SciPy"
+import = "from scipy.integrate import solve_ivp"
+call = "solve_ivp(fun, (t0, t1), y0, t_eval=times, args=(params,))"
+aliases = ["ode", "differential equation", "ode solver", "compartment model", "pharmacokinetic model", "sir model", "initial value problem"]
+r = ["deSolve::ode", "deSolve::lsoda"]
+inputs = "fun(t, y, *args) -> dy/dt array; time span (t0, t1); initial state y0; t_eval = output times."
+returns = "OdeResult: .t (times), .y (shape (n_states, n_times)), .success, .message."
+example = '''
+import numpy as np
+from scipy.integrate import solve_ivp
+
+def one_compartment(t, y, ka, ke):        # oral dose: gut -> plasma -> eliminated
+    gut, plasma = y
+    return [-ka * gut, ka * gut - ke * plasma]
+
+sol = solve_ivp(one_compartment, (0, 24), [100.0, 0.0], t_eval=[0, 1, 2, 4, 8, 24],
+                args=(1.0, 0.2), method="LSODA", rtol=1e-8, atol=1e-10)
+print(sol.success, np.round(sol.y[1], 2))   # plasma amount at each time
+assert sol.success and np.isclose(sol.y[0, -1], 100 * np.exp(-24), atol=1e-6)
+'''
+caveats = [
+    "Argument order is fun(t, y) and it returns just the derivative array; deSolve uses func(t, y, parms) returning list(dy).",
+    "Default method is 'RK45' with rtol=1e-3, much looser than deSolve (lsoda, rtol=1e-6). Set method='LSODA' (or 'BDF' for stiff systems) and tighten rtol/atol.",
+    "Without t_eval you get the solver's own step times, not a regular grid.",
+    "Results are rows = states, columns = times (deSolve returns times as rows); use sol.y.T to get R's layout.",
+]
+see_also = ["quad-integrate", "curve-fit"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html"
+
+[[entry]]
+id = "np-svd"
+title = "Singular value decomposition (SVD) of a matrix"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np"
+call = "U, s, Vt = np.linalg.svd(X, full_matrices=False)"
+aliases = ["svd", "singular values", "singular value decomposition", "low rank approximation", "pca by svd"]
+r = ["svd", "La.svd"]
+inputs = "2-D array X (n x p)."
+returns = "U (n x k), s (1-D singular values, descending), Vt (k x p) = V TRANSPOSED; X = U @ np.diag(s) @ Vt."
+example = '''
+import numpy as np
+
+rng = np.random.default_rng(8)
+X = rng.normal(size=(20, 4))
+U, s, Vt = np.linalg.svd(X, full_matrices=False)
+print(U.shape, s.round(3), Vt.shape)
+assert np.allclose(U @ np.diag(s) @ Vt, X)
+'''
+caveats = [
+    "Returns Vt (V transposed), unlike R svd()$v. Use Vt.T to get R's v.",
+    "Default full_matrices=True gives a square n x n U; pass full_matrices=False for R's thin SVD.",
+    "Singular vectors are unique only up to sign; do not compare signs with R output.",
+]
+see_also = ["np-qr", "np-cholesky", "np-eigvalsh"]
+docs = "https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html"
+
+[[entry]]
+id = "np-qr"
+title = "QR decomposition of a matrix"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np"
+call = "Q, R = np.linalg.qr(X)"
+aliases = ["qr", "qr decomposition", "orthogonal triangular decomposition", "least squares via qr"]
+r = ["qr", "qr.Q", "qr.R", "qr.solve"]
+inputs = "2-D array X (n x p)."
+returns = "Q (n x p, orthonormal columns) and R (p x p, upper triangular); X = Q @ R."
+example = '''
+import numpy as np
+from scipy.linalg import solve_triangular
+
+rng = np.random.default_rng(9)
+X = np.column_stack([np.ones(30), rng.normal(size=(30, 2))])
+y = X @ np.array([1.0, 2.0, -1.0]) + rng.normal(0, 0.1, 30)
+
+Q, R = np.linalg.qr(X)                       # reduced ("thin") QR by default
+beta = solve_triangular(R, Q.T @ y)          # least squares, like qr.solve(X, y)
+print(beta.round(3))
+assert np.allclose(Q @ R, X) and np.allclose(beta, np.linalg.lstsq(X, y)[0])
+'''
+caveats = [
+    "NumPy returns Q and R directly; R's qr() returns a compact object you unpack with qr.Q / qr.R.",
+    "No column pivoting in np.linalg.qr (R's LINPACK qr pivots rank-deficient columns). For pivoting use scipy.linalg.qr(X, pivoting=True).",
+    "Signs of Q columns / R rows may differ from R.",
+]
+see_also = ["np-svd", "np-cholesky", "np-lstsq", "np-solve"]
+docs = "https://numpy.org/doc/stable/reference/generated/numpy.linalg.qr.html"
+
+[[entry]]
+id = "np-cholesky"
+title = "Cholesky decomposition of a positive definite matrix"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np"
+call = "L = np.linalg.cholesky(S)"
+aliases = ["cholesky", "chol", "cholesky factor", "square root of covariance matrix", "correlated normal draws"]
+r = ["chol", "chol2inv"]
+inputs = "Symmetric positive definite 2-D array S (e.g. a covariance matrix)."
+returns = "LOWER triangular L with S = L @ L.T (raises LinAlgError if S is not positive definite)."
+example = '''
+import numpy as np
+
+S = np.array([[4.0, 1.2], [1.2, 1.0]])
+L = np.linalg.cholesky(S)                  # LOWER triangular
+R_chol = L.T                               # what R's chol(S) returns (upper)
+print(L)
+assert np.allclose(L @ L.T, S) and np.allclose(R_chol.T @ R_chol, S)
+
+rng = np.random.default_rng(10)
+z = rng.standard_normal((5000, 2))
+draws = z @ L.T                            # rows ~ N(0, S)
+print(np.cov(draws, rowvar=False).round(2))
+'''
+caveats = [
+    "R chol() returns the UPPER triangle R with S = t(R) %*% R; NumPy returns the LOWER triangle L = t(R). Transpose to match. (NumPy 2 also accepts upper=True.)",
+    "scipy.linalg.cholesky defaults to upper (lower=False), the same as R, so the two Python functions disagree with each other.",
+    "chol2inv equivalent: scipy.linalg.cho_solve((L, True), np.eye(n)).",
+]
+see_also = ["np-svd", "np-qr", "mvn-logpdf", "np-eigvalsh"]
+docs = "https://numpy.org/doc/stable/reference/generated/numpy.linalg.cholesky.html"
+
+[[entry]]
+id = "sparse-matrix"
+title = "Sparse matrices (mostly zeros): build, multiply, solve"
+kind = "compute"
+library = "SciPy"
+import = "import scipy.sparse as sp\nfrom scipy.sparse.linalg import spsolve"
+call = "A = sp.csr_array((values, (rows, cols)), shape=(n, p))"
+aliases = ["sparse", "sparse matrix", "sparsematrix", "csr", "large mostly zero matrix", "sparse linear system", "dgcmatrix"]
+r = ["Matrix::sparseMatrix", "Matrix::Matrix(sparse = TRUE)", "Matrix::solve"]
+inputs = "Triplets (values, (row_idx, col_idx)) with 0-based indices, or a dense array; shape."
+returns = "csr_array; supports @, .T, .sum(axis), .toarray(); spsolve for A x = b."
+example = '''
+import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import spsolve
+
+n = 1000
+main = 2.0 * np.ones(n)
+off = -1.0 * np.ones(n - 1)
+A = sp.diags_array([off, main, off], offsets=[-1, 0, 1], format="csr")   # tridiagonal
+print(type(A).__name__, A.shape, "stored non-zeros:", A.nnz)
+
+b = np.ones(n)
+x = spsolve(A, b)
+assert np.allclose(A @ x, b)
+
+T = sp.csr_array(([5.0, 7.0], ([0, 2], [1, 0])), shape=(3, 3))       # triplet form, 0-based
+print(T.toarray())
+'''
+caveats = [
+    "Indices are 0-based (Matrix::sparseMatrix(i, j, x) is 1-based).",
+    "Use the *_array classes (csr_array, diags_array); the older *_matrix classes make * mean matrix product. With arrays, * is ELEMENTWISE and @ is matrix product.",
+    "Never call np.linalg functions on a sparse array; use scipy.sparse.linalg (spsolve, eigsh, svds) or .toarray() for small ones.",
+]
+see_also = ["np-solve", "np-matmul"]
+docs = "https://docs.scipy.org/doc/scipy/reference/sparse.html"
+
+[[entry]]
+id = "sobol-qmc"
+title = "Quasi-Monte Carlo (Sobol / Halton / Latin hypercube) sample points"
+kind = "compute"
+library = "SciPy"
+import = "from scipy.stats import qmc"
+call = "qmc.Sobol(d=2, scramble=True, rng=rng).random_base2(m=10)"
+aliases = ["sobol", "sobol sequence", "quasi monte carlo", "low discrepancy sequence", "halton", "latin hypercube", "space filling design"]
+r = ["randtoolbox::sobol", "randtoolbox::halton", "lhs::randomLHS", "qrng::sobol"]
+inputs = "Dimension d; rng= a Generator (for scrambling); number of points 2**m."
+returns = "Array (n, d) in the unit cube [0, 1)^d; rescale with qmc.scale(sample, lower, upper)."
+example = '''
+import numpy as np
+from scipy.stats import qmc, norm
+
+rng = np.random.default_rng(12)
+sampler = qmc.Sobol(d=2, scramble=True, rng=rng)
+u = sampler.random_base2(m=10)                 # 2**10 = 1024 points
+print(u.shape, "discrepancy:", qmc.discrepancy(u))
+
+z = norm.ppf(u)                                 # map to standard normals
+estimate = np.mean(z[:, 0] ** 2 + z[:, 1] ** 2) # E[X^2 + Y^2] = 2
+print(estimate)
+assert abs(estimate - 2) < 0.05
+'''
+caveats = [
+    "SciPy scrambles by default (scramble=True); randtoolbox::sobol does not. Pass scramble=False for the classic deterministic sequence.",
+    "Sobol balance properties need n = power of 2: use random_base2(m); random(n) with other n warns.",
+    "The seed keyword is now rng= (a numpy Generator), as elsewhere in new SciPy.",
+]
+see_also = ["rng-draws", "quad-integrate"]
+docs = "https://docs.scipy.org/doc/scipy/reference/stats.qmc.html"
+
+[[entry]]
+id = "interp-spline"
+title = "Interpolate between data points (linear or cubic interpolating spline)"
+kind = "compute"
+library = "SciPy"
+import = "import numpy as np\nfrom scipy.interpolate import make_interp_spline"
+call = "make_interp_spline(x, y, k=3)(x_new)   # linear: np.interp(x_new, x, y)"
+aliases = ["interpolate", "interpolation", "linear interpolation", "cubic interpolation", "interp1d", "approx", "approxfun", "fill between points", "cubic spline interpolation"]
+r = ["approx", "approxfun", "splinefun"]
+inputs = "x strictly increasing, y same length; k = spline degree (1 linear, 3 cubic); new x values."
+returns = "BSpline (callable; .derivative(), .antiderivative()). np.interp returns an array directly."
+example = '''
+import numpy as np
+from scipy.interpolate import make_interp_spline
+
+x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+y = x ** 3
+x_new = np.array([0.5, 1.5, 2.5])
+
+lin = np.interp(x_new, x, y)                  # approx(x, y, xout = x_new)
+cubic = make_interp_spline(x, y, k=3)          # passes through every point exactly
+print(lin, cubic(x_new))
+assert np.allclose(cubic(x_new), x_new ** 3)   # cubic data recovered exactly
+'''
+caveats = [
+    "scipy.interpolate.interp1d is LEGACY (documented as not recommended); use np.interp for linear and make_interp_spline / CubicSpline / PchipInterpolator for smooth curves.",
+    "np.interp holds the end values outside the data range, like approx(rule = 2); R approx default rule = 1 gives NA. A BSpline extrapolates by default.",
+    "End conditions differ: make_interp_spline and CubicSpline default to 'not-a-knot'; R spline()/splinefun() default to method = 'fmm'. Use bc_type='natural' for method = 'natural'.",
+    "Interpolation passes THROUGH the points; to smooth noisy data use a smoothing spline instead.",
+]
+see_also = ["smoothing-spline", "patsy-bs"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.make_interp_spline.html"
+
+[[entry]]
+id = "numerical-derivative"
+title = "Numerical derivative, gradient, Jacobian or Hessian of a function"
+kind = "compute"
+library = "SciPy"
+import = "from scipy.differentiate import derivative, jacobian, hessian"
+call = "derivative(f, x).df   # jacobian(f, x).df, hessian(f, x).ddf"
+aliases = ["numerical derivative", "gradient", "finite differences", "jacobian", "numerical hessian", "derivative at a point", "delta method gradient"]
+r = ["numDeriv::grad", "numDeriv::jacobian", "numDeriv::hessian", "optimHess"]
+inputs = "A VECTORIZED function f and the point(s) x. For jacobian/hessian, f takes an array whose FIRST axis indexes the variables."
+returns = "Result object: .df (derivative or Jacobian) or .ddf (Hessian), plus .error estimate and .success."
+example = '''
+import numpy as np
+from scipy.differentiate import derivative, hessian
+
+res = derivative(np.exp, np.array([0.0, 1.0]))     # elementwise derivative at 2 points
+print(res.df, res.success)
+assert np.allclose(res.df, np.exp([0.0, 1.0]))
+
+def negloglik(theta):                              # theta[0] = mu, theta[1] = log sigma
+    data = np.array([4.1, 5.3, 6.0, 4.8, 5.5])
+    mu, log_sigma = theta[0], theta[1]
+    data = data.reshape((-1,) + (1,) * np.ndim(mu))  # broadcast over SciPy's extra axes
+    z = (data - mu) / np.exp(log_sigma)
+    return np.sum(0.5 * z ** 2 + log_sigma, axis=0)
+
+H = hessian(negloglik, np.array([5.14, np.log(0.65)])).ddf   # Hessian is .ddf, not .df
+print("observed information:\n", H.round(3))
+'''
+caveats = [
+    "scipy.differentiate is new (SciPy 1.15+). f must accept and return ARRAYS (it is evaluated at many points at once); a scalar-only Python function fails. Older code uses scipy.optimize.approx_fprime (gradient only).",
+    "For jacobian/hessian the variables are on axis 0 of x, and f must handle extra trailing axes (see the broadcasting in the example).",
+    "Inverting the Hessian of a negative log-likelihood at the MLE gives the covariance of the estimates (like solve(optimHess(...))).",
+]
+see_also = ["minimize", "sympy-diff", "curve-fit"]
+docs = "https://docs.scipy.org/doc/scipy/reference/differentiate.html"
+
+[[entry]]
+id = "np-fft"
+title = "Fast Fourier transform and convolution"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np\nfrom scipy.signal import fftconvolve"
+call = "np.fft.fft(x); np.fft.ifft(X); fftconvolve(a, b)"
+aliases = ["fft", "fourier transform", "spectrum", "periodogram", "convolution", "convolve", "inverse fft"]
+r = ["fft", "mvfft", "convolve", "spec.pgram"]
+inputs = "1-D array (real or complex); for convolution two arrays."
+returns = "Complex array of Fourier coefficients (same length); fftconvolve returns the full convolution (length len(a) + len(b) - 1)."
+example = '''
+import numpy as np
+from scipy.signal import fftconvolve
+
+t = np.arange(64)
+x = np.sin(2 * np.pi * 4 * t / 64)
+X = np.fft.fft(x)                                    # same as R fft(x)
+print("peak frequency index:", int(np.argmax(np.abs(X[:32]))))
+assert np.allclose(np.fft.ifft(X).real, x)          # ifft already divides by n
+
+print(fftconvolve([1.0, 2.0, 3.0], [0.0, 1.0, 0.5]).round(6))   # = np.convolve
+'''
+caveats = [
+    "R fft(X, inverse = TRUE) is UNnormalized (you divide by length yourself); np.fft.ifft already divides by n.",
+    "R convolve(x, y, type = 'open') reverses y; the ordinary convolution is np.convolve(x, y) or fftconvolve (faster for long inputs).",
+    "Real input: np.fft.rfft returns only the non-negative frequencies; np.fft.fftfreq(n, d) gives the frequency of each coefficient.",
+]
+see_also = ["np-matmul"]
+docs = "https://numpy.org/doc/stable/reference/routines.fft.html"

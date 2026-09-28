@@ -1,0 +1,390 @@
+# Topic: survival -- time-to-event analysis: Kaplan-Meier, log-rank, Cox, AFT (statsmodels core; lifelines add-on).
+# Key distinction: each subject has a TIME and an EVENT flag (1 = event observed, 0 = censored), exactly like R's Surv(time, status).
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "kaplan-meier"
+title = "Kaplan-Meier survival curve (product-limit estimate), median survival"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.duration.survfunc import SurvfuncRight"
+call = "SurvfuncRight(time, status)"
+aliases = ["kaplan meier", "kaplan-meier", "km curve", "survival curve", "survfit", "product limit estimator", "median survival", "survival probability at time"]
+r = ["survival::survfit", "survfit(Surv(time, status) ~ 1)"]
+inputs = "time: follow-up times; status: 1 = event observed, 0 = censored (same coding as Surv(time, status)). Optional entry= for delayed entry."
+returns = "SurvfuncRight: .surv_times, .surv_prob, .surv_prob_se (Greenwood), .n_risk, .n_events, .summary() DataFrame, .quantile(p), .quantile_ci(p), .plot()."
+example = '''
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.duration.survfunc import SurvfuncRight
+
+rng = np.random.default_rng(7)
+n = 300
+event_time = rng.exponential(10.0, n)
+censor_time = rng.uniform(0, 20, n)
+df = pd.DataFrame({"time": np.minimum(event_time, censor_time),
+                   "status": (event_time <= censor_time).astype(int)})   # 1 = event, 0 = censored
+
+km = SurvfuncRight(df["time"], df["status"])
+print(km.summary().head())                      # Surv prob, SE, num at risk, num events
+print("median survival:", round(km.quantile(0.5), 2), " 95% CI:", np.round(km.quantile_ci(0.5), 2))
+assert 0 < km.surv_prob[-1] < km.surv_prob[0] <= 1
+
+fig = km.plot()                                  # step curve, like plot(survfit(...))
+plt.close(fig)
+'''
+caveats = [
+    "status must be 1 = event observed, 0 = censored (R's Surv default). Data coded the other way (1 = censored) gives a wrong curve silently.",
+    "One curve per call: for groups, loop over df.groupby('group') (R's survfit(... ~ group) does it in one call).",
+    "summary() gives the Greenwood SE but no pointwise CI columns; R's default conf.type = 'log' interval is exp(log S +/- 1.96 * SE / S). simultaneous_cb() gives a confidence BAND.",
+    "Only rows at event times are listed (like summary(survfit), not censoring times).",
+]
+see_also = ["kaplan-meier-lifelines", "logrank-test", "cox-ph", "ecdf"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.duration.survfunc.SurvfuncRight.html"
+
+[[entry]]
+id = "kaplan-meier-lifelines"
+title = "Kaplan-Meier curve with confidence bands using lifelines"
+kind = "fit"
+library = "lifelines"
+import = "from lifelines import KaplanMeierFitter"
+call = "KaplanMeierFitter().fit(durations, event_observed=status)"
+aliases = ["lifelines kaplan meier", "lifelines km", "kaplanmeierfitter", "km curve with confidence interval lifelines", "survival table lifelines"]
+r = ["survival::survfit", "survminer::ggsurvplot"]
+inputs = "durations; event_observed: 1 = event, 0 = censored; optional label=, timeline=, entry=."
+returns = "Fitted KaplanMeierFitter: .survival_function_, .confidence_interval_, .median_survival_time_, .survival_function_at_times(t), .event_table, .plot_survival_function()."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from lifelines import KaplanMeierFitter
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(7)
+n = 300
+group = rng.integers(0, 2, n)
+event_time = rng.exponential(np.where(group == 1, 6.0, 12.0))
+censor_time = rng.uniform(0, 20, n)
+df = pd.DataFrame({"time": np.minimum(event_time, censor_time),
+                   "status": (event_time <= censor_time).astype(int), "group": group})
+
+fig, ax = plt.subplots()
+for g, sub in df.groupby("group"):
+    kmf = KaplanMeierFitter(label=f"group {g}").fit(sub["time"], event_observed=sub["status"])
+    kmf.plot_survival_function(ax=ax)            # step curve with shaded 95% CI
+    print(g, "median:", round(kmf.median_survival_time_, 2),
+          " S(5):", round(float(kmf.survival_function_at_times(5.0).iloc[0]), 3))
+plt.close(fig)
+assert kmf.survival_function_.iloc[0, 0] == 1.0
+'''
+caveats = [
+    "If event_observed is omitted lifelines assumes EVERY subject had the event (no censoring). Always pass it.",
+    "Pointwise CIs use the log(-log) transform (R conf.type = 'log-log'); R survfit's default is 'log', so interval ends differ slightly.",
+    "Results are pandas objects indexed by time (including time 0), unlike statsmodels' arrays.",
+    "Optional add-on: install with the stats-extra extra. The core alternative is statsmodels SurvfuncRight (kaplan-meier).",
+]
+see_also = ["kaplan-meier", "logrank-test-lifelines", "nelson-aalen"]
+docs = "https://lifelines.readthedocs.io/en/latest/fitters/univariate/KaplanMeierFitter.html"
+
+[[entry]]
+id = "logrank-test"
+title = "Log-rank test comparing survival curves between groups"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.duration.survfunc import survdiff"
+call = "chi2, pvalue = survdiff(time, status, group)"
+aliases = ["log rank test", "logrank", "log-rank", "compare survival curves", "survdiff", "mantel cox test", "survival difference between groups"]
+r = ["survival::survdiff", "survdiff(Surv(time, status) ~ group)"]
+inputs = "time, status (1 = event, 0 = censored), group labels; optional strata=, weight_type= ('gb', 'tw', 'fh' with fh_p=)."
+returns = "Tuple (chi-square statistic, p-value); df = number of groups - 1."
+example = '''
+import numpy as np
+from statsmodels.duration.survfunc import survdiff
+
+rng = np.random.default_rng(21)
+n = 300
+group = rng.integers(0, 2, n)
+event_time = rng.exponential(np.where(group == 1, 6.0, 12.0))     # group 1 fails faster
+censor_time = rng.uniform(0, 20, n)
+time = np.minimum(event_time, censor_time)
+status = (event_time <= censor_time).astype(int)                  # 1 = event, 0 = censored
+
+chi2, pvalue = survdiff(time, status, group)
+print(f"chi-square = {chi2:.2f} on 1 df, p = {pvalue:.2g}")
+assert pvalue < 0.05
+'''
+caveats = [
+    "Returns only (chi2, p): no observed/expected table as R prints. Use SurvfuncRight per group for the counts.",
+    "Default (weight_type=None) is the ordinary log-rank test = R survdiff rho = 0. R's rho = 1 (Peto-Peto) is weight_type='fh', fh_p=1.",
+    "Stratified test: pass strata= (R: + strata(x)).",
+]
+see_also = ["kaplan-meier", "logrank-test-lifelines", "cox-ph"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.duration.survfunc.survdiff.html"
+
+[[entry]]
+id = "logrank-test-lifelines"
+title = "Log-rank test between two groups using lifelines"
+kind = "evaluate"
+library = "lifelines"
+import = "from lifelines.statistics import logrank_test"
+call = "logrank_test(time_a, time_b, event_observed_A=status_a, event_observed_B=status_b)"
+aliases = ["lifelines logrank", "lifelines log rank test", "logrank_test", "multivariate logrank test", "pairwise logrank"]
+r = ["survival::survdiff"]
+inputs = "Times and event flags for group A and group B (1 = event, 0 = censored). multivariate_logrank_test(time, group, status) for 3+ groups."
+returns = "StatisticalResult: .test_statistic, .p_value, .summary, .print_summary()."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+from lifelines.statistics import logrank_test
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(21)
+n = 300
+group = rng.integers(0, 2, n)
+event_time = rng.exponential(np.where(group == 1, 6.0, 12.0))
+censor_time = rng.uniform(0, 20, n)
+time = np.minimum(event_time, censor_time)
+status = (event_time <= censor_time).astype(int)
+
+a, b = group == 0, group == 1
+result = logrank_test(time[a], time[b], event_observed_A=status[a], event_observed_B=status[b])
+print(f"chi-square = {result.test_statistic:.2f}, p = {result.p_value:.2g}")
+assert result.p_value < 0.05
+'''
+caveats = [
+    "Omitting event_observed_A/B treats everyone as an event (no censoring).",
+    "Gives the same statistic as statsmodels survdiff and R survdiff (rho = 0) for two groups.",
+    "Optional add-on (stats-extra). The core alternative is statsmodels survdiff (logrank-test).",
+]
+see_also = ["logrank-test", "kaplan-meier-lifelines"]
+docs = "https://lifelines.readthedocs.io/en/latest/lifelines.statistics.html"
+
+[[entry]]
+id = "cox-ph"
+title = "Cox proportional hazards regression (hazard ratios) with a formula"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.phreg('time ~ group + age', data=df, status=df['status'], ties='efron').fit()"
+aliases = ["cox regression", "cox proportional hazards", "coxph", "hazard ratio", "proportional hazards model", "cox model", "survival regression"]
+r = ["survival::coxph", "coxph(Surv(time, status) ~ x)"]
+inputs = "Formula 'time ~ covariates' (no intercept is fitted); status= array (1 = event, 0 = censored); optional strata=, entry=, ties=."
+returns = "PHRegResults: .params (log hazard ratios, a plain array), .bse, .pvalues, .conf_int(), .summary() (shows HR), .model.exog_names."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(42)
+n = 400
+df = pd.DataFrame({"group": rng.integers(0, 2, n), "age": rng.normal(60, 10, n)})
+rate = 0.1 * np.exp(0.7 * df["group"] + 0.03 * (df["age"] - 60))   # true log HR: 0.7, 0.03
+event_time = rng.exponential(1 / rate)
+censor_time = rng.uniform(0, 20, n)
+df["time"] = np.minimum(event_time, censor_time)
+df["status"] = (event_time <= censor_time).astype(int)               # 1 = event, 0 = censored
+
+res = smf.phreg("time ~ group + age", data=df, status=df["status"], ties="efron").fit()
+print(res.summary())
+hr = pd.Series(np.exp(res.params), index=res.model.exog_names)
+print("hazard ratios:", hr.round(3).to_dict())
+assert abs(res.params[0] - 0.7) < 0.35
+'''
+caveats = [
+    "Default ties='breslow'; R coxph defaults to Efron. Pass ties='efron' to match R estimates.",
+    "status is a separate array argument (status=df['status']), not part of the formula as in Surv(time, status). Omitting it treats every time as an event.",
+    "params is a plain array; names are in res.model.exog_names. Hazard ratio = np.exp(params).",
+    "No built-in cox.zph test; check proportional hazards with res.schoenfeld_residuals, or use lifelines CoxPHFitter.check_assumptions.",
+]
+see_also = ["cox-ph-lifelines", "kaplan-meier", "logrank-test", "concordance-index"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.duration.hazard_regression.PHReg.html"
+
+[[entry]]
+id = "cox-ph-lifelines"
+title = "Cox proportional hazards with lifelines, plus PH assumption check (cox.zph)"
+kind = "fit"
+library = "lifelines"
+import = "from lifelines import CoxPHFitter"
+call = "CoxPHFitter().fit(df, duration_col='time', event_col='status', formula='group + age')"
+aliases = ["lifelines cox", "lifelines coxph", "coxphfitter", "check proportional hazards assumption", "cox zph", "schoenfeld residuals test", "proportional hazards test"]
+r = ["survival::coxph", "survival::cox.zph"]
+inputs = "DataFrame with duration and event columns; formula= (else EVERY other column is a covariate); optional strata=, penalizer=."
+returns = "Fitted CoxPHFitter: .summary (coef, exp(coef), CI, p), .params_, .hazard_ratios_, .concordance_index_, .check_assumptions(df), .predict_survival_function(X)."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+import pandas as pd
+from lifelines import CoxPHFitter
+from lifelines.statistics import proportional_hazard_test
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(42)
+n = 400
+df = pd.DataFrame({"group": rng.integers(0, 2, n), "age": rng.normal(60, 10, n)})
+rate = 0.1 * np.exp(0.7 * df["group"] + 0.03 * (df["age"] - 60))
+event_time = rng.exponential(1 / rate)
+censor_time = rng.uniform(0, 20, n)
+df["time"] = np.minimum(event_time, censor_time)
+df["status"] = (event_time <= censor_time).astype(int)
+
+cph = CoxPHFitter().fit(df, duration_col="time", event_col="status", formula="group + age")
+print(cph.summary[["coef", "exp(coef)", "p"]].round(4))
+print("C-index:", round(cph.concordance_index_, 3))
+
+zph = proportional_hazard_test(cph, df, time_transform="km")    # like cox.zph(fit, transform = "km")
+print(zph.summary[["test_statistic", "p"]].round(3))
+assert abs(cph.params_["group"] - 0.7) < 0.35
+'''
+caveats = [
+    "Without formula=, every column except duration/event is used as a covariate (including IDs). Pass formula= or drop columns first.",
+    "Ties: lifelines uses Efron, like R coxph, so estimates match R (statsmodels' default is Breslow).",
+    "cph.check_assumptions(df, p_value_threshold=0.05, show_plots=False) prints advice and plots; proportional_hazard_test gives the per-covariate table like cox.zph (no GLOBAL row). Default time_transform differs from R's 'km'; set it explicitly.",
+    "Optional add-on (stats-extra). The core alternative is statsmodels smf.phreg (cox-ph).",
+]
+see_also = ["cox-ph", "concordance-index", "weibull-aft", "kaplan-meier-lifelines"]
+docs = "https://lifelines.readthedocs.io/en/latest/fitters/regression/CoxPHFitter.html"
+
+[[entry]]
+id = "nelson-aalen"
+title = "Nelson-Aalen cumulative hazard estimate"
+kind = "fit"
+library = "lifelines"
+import = "from lifelines import NelsonAalenFitter"
+call = "NelsonAalenFitter().fit(durations, event_observed=status)"
+aliases = ["nelson aalen", "cumulative hazard", "cumulative hazard function", "nelsonaalenfitter", "fleming harrington estimator", "hazard function estimate"]
+r = ["survfit(Surv(time, status) ~ 1, ctype = 1)", "mice::nelsonaalen"]
+inputs = "durations; event_observed: 1 = event, 0 = censored."
+returns = "Fitted NelsonAalenFitter: .cumulative_hazard_, .confidence_interval_, .cumulative_hazard_at_times(t), .smoothed_hazard_(bandwidth), .plot_cumulative_hazard()."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+from lifelines import NelsonAalenFitter
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(3)
+n = 400
+event_time = rng.exponential(10.0, n)          # constant hazard 0.1  ->  H(t) = 0.1 t
+censor_time = rng.uniform(0, 20, n)
+time = np.minimum(event_time, censor_time)
+status = (event_time <= censor_time).astype(int)
+
+naf = NelsonAalenFitter().fit(time, event_observed=status)
+H = naf.cumulative_hazard_at_times([5.0, 10.0]).to_numpy()
+print("H(5), H(10):", H.round(3), " (true 0.5, 1.0)")
+assert np.allclose(H, [0.5, 1.0], atol=0.2)
+'''
+caveats = [
+    "exp(-H(t)) is the Fleming-Harrington survival estimate, close to but not identical to Kaplan-Meier.",
+    "R's survfit reports cumulative hazard via summary(fit)$cumhaz; with ctype = 1 it is Nelson-Aalen.",
+    "Optional add-on (stats-extra).",
+]
+see_also = ["kaplan-meier-lifelines", "kaplan-meier"]
+docs = "https://lifelines.readthedocs.io/en/latest/fitters/univariate/NelsonAalenFitter.html"
+
+[[entry]]
+id = "weibull-aft"
+title = "Weibull accelerated failure time (parametric survival) regression"
+kind = "fit"
+library = "lifelines"
+import = "from lifelines import WeibullAFTFitter"
+call = "WeibullAFTFitter().fit(df, duration_col='time', event_col='status', formula='group + age')"
+aliases = ["weibull regression", "accelerated failure time", "aft model", "parametric survival regression", "survreg", "weibull survival model", "time ratio"]
+r = ["survival::survreg", "survreg(Surv(time, status) ~ x, dist = 'weibull')", "flexsurv::flexsurvreg"]
+inputs = "DataFrame with duration and event columns (1 = event); formula= for covariates."
+returns = "Fitted WeibullAFTFitter: .summary / .params_ indexed by (param, covariate): lambda_ = log-scale coefficients, rho_ = log shape; .predict_median(X)."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+import pandas as pd
+from lifelines import WeibullAFTFitter
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(5)
+n = 400
+df = pd.DataFrame({"group": rng.integers(0, 2, n)})
+shape = 1.5
+scale = np.exp(2.5 - 0.5 * df["group"])                  # group 1: times shrink by exp(-0.5)
+event_time = scale * rng.weibull(shape, n)
+censor_time = rng.uniform(0, 30, n)
+df["time"] = np.minimum(event_time, censor_time)
+df["status"] = (event_time <= censor_time).astype(int)
+
+aft = WeibullAFTFitter().fit(df, duration_col="time", event_col="status", formula="group")
+b_group = aft.params_[("lambda_", "group")]
+shape_hat = np.exp(aft.params_[("rho_", "Intercept")])
+print("time ratio group 1 vs 0:", round(np.exp(b_group), 3))
+print("Weibull shape:", round(shape_hat, 3), " R survreg 'Scale' = 1/shape =", round(1 / shape_hat, 3))
+assert abs(b_group + 0.5) < 0.25 and abs(shape_hat - 1.5) < 0.3
+'''
+caveats = [
+    "Parameterization differs from R survreg: lambda_ coefficients equal survreg coefficients (log time scale), but lifelines reports rho_ = log(SHAPE), while survreg reports Scale = 1/shape.",
+    "exp(coef) is a TIME ratio (>1 = longer survival), not a hazard ratio. For Weibull, HR = exp(-coef * shape).",
+    "Other distributions: LogNormalAFTFitter, LogLogisticAFTFitter (survreg dist = 'lognormal' / 'loglogistic').",
+    "Optional add-on (stats-extra). No statsmodels equivalent in the core install.",
+]
+see_also = ["cox-ph-lifelines", "cox-ph", "dist-fit-mle"]
+docs = "https://lifelines.readthedocs.io/en/latest/fitters/regression/WeibullAFTFitter.html"
+
+[[entry]]
+id = "concordance-index"
+title = "Concordance index (C-index / Harrell's C) for survival predictions"
+kind = "evaluate"
+library = "lifelines"
+import = "from lifelines.utils import concordance_index"
+call = "concordance_index(time, predicted_survival_score, event_observed=status)"
+aliases = ["c index", "c-index", "harrell c", "harrells c", "concordance", "survival discrimination", "concordance statistic"]
+r = ["Hmisc::rcorr.cens", "survival::concordance"]
+inputs = "Observed times; a score where HIGHER = LONGER survival (e.g. predicted median, or MINUS a risk score); event flags (1 = event)."
+returns = "Float in [0, 1]; 0.5 = random, 1 = perfect ordering."
+requires = ["lifelines"]
+extra = "stats-extra"
+example = '''
+import warnings
+import numpy as np
+from lifelines.utils import concordance_index
+
+# lifelines 0.30 internals emit pandas/datetime DeprecationWarnings; they are not from your code
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"lifelines")
+
+rng = np.random.default_rng(9)
+n = 300
+risk = rng.normal(size=n)                                   # e.g. a linear predictor from a Cox model
+event_time = rng.exponential(10 * np.exp(-0.8 * risk))
+censor_time = rng.uniform(0, 25, n)
+time = np.minimum(event_time, censor_time)
+status = (event_time <= censor_time).astype(int)
+
+c = concordance_index(time, -risk, event_observed=status)   # NEGATE a risk score
+print("C-index:", round(c, 3))
+assert c > 0.6
+'''
+caveats = [
+    "Sign convention: lifelines expects higher score = longer survival. Passing a hazard / risk score directly gives 1 - C (e.g. 0.3 instead of 0.7).",
+    "Omitting event_observed treats all subjects as events.",
+    "R survival::concordance(fit) on a coxph fit flips the sign for you; with a raw predictor, concordance(Surv(time, status) ~ x, reverse = TRUE) corresponds to passing -x here.",
+    "A fitted CoxPHFitter already reports .concordance_index_.",
+]
+see_also = ["cox-ph-lifelines", "cox-ph", "roc-auc"]
+docs = "https://lifelines.readthedocs.io/en/latest/lifelines.utils.html"

@@ -6,9 +6,9 @@
 # is NOT supplied, say so and state the assumption you are making.
 #
 # **Operation requested:** fit | evaluate | optimize | solve | compute | visualize
-# (run `psl kinds` if unsure). One sentence on what is being asked.
+# (run `stats kinds` if unsure). One sentence on what is being asked.
 #
-# **Library choice:** which call and why (`psl find "<task>"`, `psl show <id>`).
+# **Library choice:** which call and why (`stats find "<task>"`, `stats show <id>`).
 
 # %%
 import numpy as np

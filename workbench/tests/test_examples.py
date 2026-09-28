@@ -24,7 +24,15 @@ def test_example_runs_clean(script):
     assert result.returncode == 0, result.stderr[-2000:]
 
 
-def test_template_notebook_runs_in_project_kernel():
-    notebook = nbformat.read(WORKBENCH / "templates" / "exercise.ipynb", as_version=4)
-    NotebookClient(notebook, timeout=120, kernel_name="python3",
-                   resources={"metadata": {"path": str(WORKBENCH)}}).execute()
+NOTEBOOKS = [
+    WORKBENCH / "start-here.ipynb",
+    WORKBENCH / "templates" / "exercise.ipynb",
+    WORKBENCH / "templates" / "private-workspace" / "notebooks" / "start-here.ipynb",
+]
+
+
+@pytest.mark.parametrize("path", NOTEBOOKS, ids=lambda p: str(p.relative_to(WORKBENCH)))
+def test_notebook_runs_in_project_kernel(path):
+    notebook = nbformat.read(path, as_version=4)
+    NotebookClient(notebook, timeout=180, kernel_name="python3",
+                   resources={"metadata": {"path": str(path.parent)}}).execute()

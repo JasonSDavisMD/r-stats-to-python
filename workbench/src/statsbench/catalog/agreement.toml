@@ -1,0 +1,390 @@
+# Topic: agreement -- inter-rater reliability, method comparison and diagnostic accuracy (clinical measurement).
+# Key distinction: agreement (kappa, ICC, Bland-Altman, CCC) asks "do two measurements give the SAME value?"; correlation only asks "do they move together?".
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "cohen-kappa"
+title = "Cohen's kappa for two raters, unweighted or weighted (linear / quadratic)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import cohen_kappa_score"
+call = "cohen_kappa_score(rater1, rater2, weights=None | 'linear' | 'quadratic')"
+aliases = ["cohen kappa", "cohens kappa", "weighted kappa", "inter rater agreement two raters", "interrater reliability categorical", "kappa statistic", "quadratic weighted kappa", "linear weighted kappa", "reader agreement", "chance corrected agreement"]
+r = ["irr::kappa2", "psych::cohen.kappa", "vcd::Kappa"]
+inputs = "Two equal-length arrays of category labels (one per rater, same subjects). labels= fixes the ordered category list."
+returns = "Kappa as a float (no CI or p-value)."
+example = '''
+import numpy as np
+from sklearn.metrics import cohen_kappa_score, confusion_matrix
+from statsmodels.stats.inter_rater import cohens_kappa
+
+rng = np.random.default_rng(41)
+# BI-RADS-like ordinal scores (1-5) from two radiologists on 80 lesions
+reader_a = rng.integers(1, 6, 80)
+reader_b = np.clip(reader_a + rng.choice([-1, 0, 0, 0, 1], 80), 1, 5)
+categories = [1, 2, 3, 4, 5]
+
+kappa = cohen_kappa_score(reader_a, reader_b, labels=categories)
+kappa_linear = cohen_kappa_score(reader_a, reader_b, labels=categories, weights="linear")
+kappa_quadratic = cohen_kappa_score(reader_a, reader_b, labels=categories, weights="quadratic")
+print(f"unweighted {kappa:.3f}  linear {kappa_linear:.3f}  quadratic {kappa_quadratic:.3f}")
+
+# Hand check of unweighted kappa: (p_observed - p_chance) / (1 - p_chance)
+table = confusion_matrix(reader_a, reader_b, labels=categories)
+p_observed = np.trace(table) / table.sum()
+p_chance = (table.sum(0) * table.sum(1)).sum() / table.sum() ** 2
+assert np.isclose(kappa, (p_observed - p_chance) / (1 - p_chance))
+
+# Standard error and 95% CI (statsmodels, from the table)
+result = cohens_kappa(table)
+print("kappa 95% CI:", round(result.kappa_low, 3), round(result.kappa_upp, 3))
+'''
+caveats = [
+    "Weight names differ from R: irr::kappa2 weight = 'equal' -> weights='linear'; weight = 'squared' -> weights='quadratic'.",
+    "Weights use the POSITION of each label in the sorted label list, not numeric distance. Pass labels=[...] so unused categories still count.",
+    "No CI or p-value from sklearn. statsmodels.stats.inter_rater.cohens_kappa(table, wt='linear'|'quadratic') returns kappa with SE and CI from a square table.",
+    "For 3+ raters use fleiss-kappa; for continuous measurements use intraclass-corr.",
+]
+see_also = ["fleiss-kappa", "intraclass-corr", "confusion-matrix", "mcnemar"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.cohen_kappa_score.html"
+
+[[entry]]
+id = "fleiss-kappa"
+title = "Fleiss' kappa for three or more raters (categorical ratings)"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.inter_rater import fleiss_kappa, aggregate_raters"
+call = "fleiss_kappa(aggregate_raters(ratings)[0], method='fleiss')"
+aliases = ["fleiss kappa", "multi rater kappa", "kappa more than two raters", "agreement among many raters", "multirater agreement", "inter rater reliability multiple raters"]
+r = ["irr::kappam.fleiss", "psych::fleiss"]
+inputs = "ratings: (n_subjects, n_raters) array of category codes; aggregate_raters turns it into a (n_subjects, n_categories) count table."
+returns = "Kappa as a float (no SE/CI)."
+example = '''
+import numpy as np
+from statsmodels.stats.inter_rater import fleiss_kappa, aggregate_raters
+
+rng = np.random.default_rng(42)
+true_grade = rng.integers(0, 3, 50)               # 50 scans, 3 categories
+noise = rng.random((50, 4)) < 0.25                # 4 raters, each errs 25% of the time
+ratings = np.where(noise, rng.integers(0, 3, (50, 4)), true_grade[:, None])
+
+count_table, categories = aggregate_raters(ratings)
+print(count_table[:3], categories)
+kappa = fleiss_kappa(count_table, method="fleiss")
+print("Fleiss kappa =", round(kappa, 3))
+
+perfect = aggregate_raters(np.repeat(true_grade[:, None], 4, axis=1))[0]
+assert np.isclose(fleiss_kappa(perfect), 1.0)
+'''
+caveats = [
+    "fleiss_kappa expects the SUBJECT x CATEGORY count table, not the raw subject x rater matrix. Convert with aggregate_raters(ratings)[0].",
+    "Raters need not be the same people for each subject (Fleiss' assumption); each subject needs the same number of ratings.",
+    "method='randolph' gives the free-marginal kappa. irr::kappam.fleiss(detail = TRUE) also reports a z test; statsmodels does not.",
+]
+see_also = ["cohen-kappa", "intraclass-corr"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.inter_rater.fleiss_kappa.html"
+
+[[entry]]
+id = "bland-altman"
+title = "Bland-Altman plot, bias and 95% limits of agreement"
+kind = "visualize"
+library = "statsmodels"
+import = "import matplotlib.pyplot as plt\nfrom statsmodels.graphics.agreement import mean_diff_plot"
+call = "mean_diff_plot(method1, method2, sd_limit=1.96, ax=ax)"
+aliases = ["bland altman", "bland-altman plot", "limits of agreement", "mean difference plot", "tukey mean difference plot", "method comparison", "agreement between two measurement methods", "bias and loa"]
+r = ["BlandAltmanLeh::bland.altman.plot", "BlandAltmanLeh::bland.altman.stats", "blandr::blandr.draw"]
+inputs = "Two equal-length arrays of paired measurements of the same subjects (same units)."
+returns = "Matplotlib Figure. Difference plotted is method1 - method2 against their mean."
+example = '''
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.graphics.agreement import mean_diff_plot
+
+rng = np.random.default_rng(43)
+true_volume = rng.uniform(20, 120, 60)                     # e.g. lesion volume in mL
+manual = true_volume + rng.normal(0, 4, 60)
+automatic = true_volume + 2.0 + rng.normal(0, 4, 60)       # software over-reads by ~2 mL
+
+fig, ax = plt.subplots(figsize=(6, 4))
+mean_diff_plot(manual, automatic, sd_limit=1.96, ax=ax)
+ax.set_xlabel("Mean of manual and automatic (mL)")
+ax.set_ylabel("Manual - automatic (mL)")
+
+# Numbers by hand (what BlandAltmanLeh::bland.altman.stats reports)
+difference = manual - automatic
+bias = difference.mean()
+sd_diff = difference.std(ddof=1)
+lower_loa, upper_loa = bias - 1.96 * sd_diff, bias + 1.96 * sd_diff
+print(f"bias = {bias:.2f}, 95% LoA = [{lower_loa:.2f}, {upper_loa:.2f}]")
+inside = np.mean((difference >= lower_loa) & (difference <= upper_loa))
+print("share of points inside LoA:", round(inside, 3))
+assert inside > 0.85
+plt.close(fig)
+'''
+caveats = [
+    "Difference is method1 - method2; swapping the arguments flips the sign of the bias. Pick the order you want reported.",
+    "SD of the differences should use ddof=1 (NumPy's std defaults to ddof=0, R's sd uses n - 1).",
+    "The plot has no CIs for bias/LoA. Compute them by hand: SE(bias) = sd/sqrt(n); SE(LoA) ~ sd*sqrt(3/n) (Bland & Altman 1999).",
+    "If the spread grows with the mean, analyse log-transformed values or percentage differences.",
+    "Pearson correlation is NOT agreement; see lin-ccc for a single-number agreement index.",
+]
+see_also = ["lin-ccc", "intraclass-corr", "plt-subplots"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.graphics.agreement.mean_diff_plot.html"
+
+[[entry]]
+id = "intraclass-corr"
+title = "Intraclass correlation coefficient (ICC) for reliability of continuous ratings"
+kind = "fit"
+library = "pingouin"
+import = "import pingouin as pg"
+call = "pg.intraclass_corr(data=long_df, targets='subject', raters='rater', ratings='score')"
+aliases = ["icc", "intraclass correlation", "inter rater reliability continuous", "test retest reliability", "interobserver reliability", "intraobserver reliability", "icc2", "icc3", "icc(2,1)", "icc(3,1)", "absolute agreement icc", "consistency icc"]
+r = ["irr::icc", "psych::ICC"]
+inputs = "Long-format DataFrame: one row per (subject, rater) with a numeric score. Complete design (every rater scores every subject)."
+returns = "DataFrame, one row per ICC type: Type, ICC, F, df1, df2, pval, CI95."
+example = '''
+import numpy as np
+import pandas as pd
+import pingouin as pg
+
+rng = np.random.default_rng(44)
+n_subjects, rater_names = 30, ["R1", "R2", "R3"]
+true_size = rng.normal(25, 6, n_subjects)
+rater_bias = {"R1": 0.0, "R2": 1.5, "R3": -0.5}
+long_df = pd.DataFrame([
+    {"subject": s, "rater": r, "score": true_size[s] + rater_bias[r] + rng.normal(0, 2)}
+    for s in range(n_subjects) for r in rater_names
+])
+
+icc_table = pg.intraclass_corr(data=long_df, targets="subject", raters="rater", ratings="score")
+print(icc_table[["Type", "ICC", "CI95"]])
+
+# Hand check from two-way ANOVA mean squares (McGraw & Wong)
+wide = long_df.pivot(index="subject", columns="rater", values="score").to_numpy()
+n, k = wide.shape
+grand = wide.mean()
+ms_rows = k * ((wide.mean(1) - grand) ** 2).sum() / (n - 1)
+ms_cols = n * ((wide.mean(0) - grand) ** 2).sum() / (k - 1)
+ss_error = ((wide - wide.mean(1, keepdims=True) - wide.mean(0) + grand) ** 2).sum()
+ms_error = ss_error / ((n - 1) * (k - 1))
+icc_consistency = (ms_rows - ms_error) / (ms_rows + (k - 1) * ms_error)
+icc_agreement = (ms_rows - ms_error) / (ms_rows + (k - 1) * ms_error + k * (ms_cols - ms_error) / n)
+by_type = icc_table.set_index("Type")["ICC"]
+assert np.isclose(by_type["ICC(C,1)"], icc_consistency)
+assert np.isclose(by_type["ICC(A,1)"], icc_agreement)
+'''
+caveats = [
+    "Requires the optional pingouin package: uv sync --extra stats-extra.",
+    "pingouin 0.7 labels types in McGraw & Wong notation: ICC(1,1), ICC(A,1), ICC(C,1), ICC(1,k), ICC(A,k), ICC(C,k). Older pingouin and psych::ICC use Shrout-Fleiss names: ICC1 = ICC(1,1), ICC2 = ICC(A,1), ICC3 = ICC(C,1), and ICC1k/ICC2k/ICC3k for the averaged versions.",
+    "irr::icc(model = 'twoway', type = 'agreement', unit = 'single') = ICC(A,1) (Shrout-Fleiss ICC2); type = 'consistency' = ICC(C,1) (ICC3); model = 'oneway' = ICC(1,1).",
+    "Choose absolute agreement ICC(A,1) when raters must give the SAME value (typical for measurement studies); consistency ICC(C,1) ignores a constant offset between raters. Report the type, not just 'ICC'.",
+    "Missing ratings raise by default; nan_policy='omit' drops whole subjects (listwise), unlike mixed-model ICCs.",
+    "Data must be LONG format (DataFrame.melt converts wide subject x rater tables).",
+]
+see_also = ["cohen-kappa", "bland-altman", "lin-ccc", "fleiss-kappa"]
+docs = "https://pingouin-stats.org/build/html/generated/pingouin.intraclass_corr.html"
+requires = ["pingouin"]
+extra = "stats-extra"
+
+[[entry]]
+id = "mcnemar"
+title = "McNemar test for paired proportions (e.g. two tests on the same patients)"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.stats.contingency_tables import mcnemar"
+call = "mcnemar(paired_table, exact=False, correction=True)"
+aliases = ["mcnemar test", "paired proportions test", "paired binary outcomes", "compare sensitivities same patients", "two diagnostic tests same subjects", "discordant pairs test", "before after binary"]
+r = ["mcnemar.test", "exact2x2::mcnemar.exact"]
+inputs = "2x2 table of PAIRED results: [[both +, A+ B-], [A- B+, both -]]."
+returns = "Bunch with .statistic and .pvalue."
+example = '''
+import numpy as np
+from statsmodels.stats.contingency_tables import mcnemar
+
+# Cancers detected by CT (rows) and MRI (columns) in the same 120 patients
+paired_table = np.array([[70, 6],
+                         [17, 27]])
+exact = mcnemar(paired_table, exact=True)                       # statsmodels default
+chi2 = mcnemar(paired_table, exact=False, correction=True)      # = R mcnemar.test default
+print("exact binomial p =", round(exact.pvalue, 4))
+print("chi-square (corrected) =", round(chi2.statistic, 3), " p =", round(chi2.pvalue, 4))
+
+b, c = paired_table[0, 1], paired_table[1, 0]
+assert np.isclose(chi2.statistic, (abs(b - c) - 1) ** 2 / (b + c))
+'''
+caveats = [
+    "Default is exact=True (binomial test on discordant pairs). R's mcnemar.test uses the chi-square with continuity correction: pass exact=False, correction=True to match.",
+    "With exact=True the .statistic is min(b, c), not a chi-square.",
+    "The table must be PAIRED (test A result vs test B result on the same subjects), not test-vs-disease. Only the discordant cells b and c matter.",
+    "For more than 2 categories use statsmodels.stats.contingency_tables.SquareTable(table).symmetry() (Bowker test, R mcnemar.test on k x k).",
+]
+see_also = ["chi2-contingency", "fisher-exact", "diagnostic-accuracy-ci", "cohen-kappa"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.contingency_tables.mcnemar.html"
+
+[[entry]]
+id = "diagnostic-accuracy-ci"
+title = "Sensitivity, specificity, PPV, NPV with Wilson or exact (Clopper-Pearson) CIs"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.proportion import proportion_confint"
+call = "proportion_confint(count=tp, nobs=tp + fn, alpha=0.05, method='wilson')"
+aliases = ["sensitivity and specificity", "sensitivity specificity confidence interval", "ppv npv", "positive predictive value", "negative predictive value", "diagnostic accuracy", "diagnostic test 2x2 table", "wilson interval", "clopper pearson interval", "binomial confidence interval", "proportion confidence interval"]
+r = ["epiR::epi.tests", "binom::binom.confint", "caret::sensitivity", "DescTools::BinomCI"]
+inputs = "Counts from the 2x2 table vs a reference standard: TP, FN, FP, TN."
+returns = "Tuple (lower, upper) per proportion; the point estimate is count / nobs."
+example = '''
+import numpy as np
+from scipy import stats
+from statsmodels.stats.proportion import proportion_confint
+
+tp, fn, fp, tn = 86, 14, 22, 178          # test vs biopsy
+measures = {
+    "sensitivity": (tp, tp + fn),
+    "specificity": (tn, tn + fp),
+    "PPV": (tp, tp + fp),
+    "NPV": (tn, tn + fn),
+}
+for name, (count, total) in measures.items():
+    low_w, high_w = proportion_confint(count, total, alpha=0.05, method="wilson")
+    low_e, high_e = proportion_confint(count, total, alpha=0.05, method="beta")   # exact
+    print(f"{name:>11}: {count / total:.3f}  Wilson [{low_w:.3f}, {high_w:.3f}]  exact [{low_e:.3f}, {high_e:.3f}]")
+
+exact_ci = stats.binomtest(tp, tp + fn).proportion_ci(method="exact")
+assert np.allclose(proportion_confint(tp, tp + fn, method="beta"), (exact_ci.low, exact_ci.high))
+'''
+caveats = [
+    "method='beta' is Clopper-Pearson 'exact' (epiR::epi.tests and binom.test use it); method='wilson' is the Wilson score interval. The DEFAULT method='normal' (Wald) is poor near 0 or 1: always set method.",
+    "alpha is 1 - confidence (0.05 -> 95% CI), not the confidence level.",
+    "PPV and NPV depend on prevalence; values from a case-control (enriched) sample do not transfer to screening populations.",
+    "Get TP/FN/FP/TN from sklearn: tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel() (note the order).",
+]
+see_also = ["likelihood-ratios", "binomtest", "confusion-matrix", "auc-bootstrap-ci"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.proportion.proportion_confint.html"
+
+[[entry]]
+id = "likelihood-ratios"
+title = "Positive and negative likelihood ratios (LR+, LR-) from a 2x2 table, with CI"
+kind = "evaluate"
+library = "NumPy"
+import = "import numpy as np\nfrom scipy import stats"
+call = "lr_pos = sens / (1 - spec); lr_neg = (1 - sens) / spec"
+aliases = ["likelihood ratio positive", "likelihood ratio negative", "lr+ lr-", "positive likelihood ratio", "negative likelihood ratio", "diagnostic likelihood ratio", "post test probability", "diagnostic odds ratio"]
+r = ["epiR::epi.tests", "DTComPair::dlr", "bdpv"]
+inputs = "Counts TP, FN, FP, TN."
+returns = "LR+ and LR- with log-method (Simel 1991) 95% CIs; computed by hand."
+example = '''
+import numpy as np
+from scipy import stats
+from sklearn.metrics import class_likelihood_ratios
+
+tp, fn, fp, tn = 86, 14, 22, 178
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+lr_pos = sensitivity / (1 - specificity)
+lr_neg = (1 - sensitivity) / specificity
+
+z = stats.norm.ppf(0.975)
+se_log_pos = np.sqrt(1 / tp - 1 / (tp + fn) + 1 / fp - 1 / (fp + tn))
+se_log_neg = np.sqrt(1 / fn - 1 / (tp + fn) + 1 / tn - 1 / (fp + tn))
+ci_pos = np.exp(np.log(lr_pos) + np.array([-z, z]) * se_log_pos)
+ci_neg = np.exp(np.log(lr_neg) + np.array([-z, z]) * se_log_neg)
+print(f"LR+ = {lr_pos:.2f} {ci_pos.round(2)}   LR- = {lr_neg:.3f} {ci_neg.round(3)}")
+
+# Post-test probability from a pre-test probability of 20%
+pre_odds = 0.20 / 0.80
+print("post-test probability if positive:", round(pre_odds * lr_pos / (1 + pre_odds * lr_pos), 3))
+
+# Cross-check with scikit-learn (point estimates only), from label vectors
+y_true = np.r_[np.ones(tp + fn), np.zeros(fp + tn)]
+y_pred = np.r_[np.ones(tp), np.zeros(fn), np.ones(fp), np.zeros(tn)]
+assert np.allclose(class_likelihood_ratios(y_true, y_pred), (lr_pos, lr_neg))
+'''
+caveats = [
+    "No SciPy/statsmodels one-liner with CIs; the log method above is what epiR::epi.tests reports.",
+    "sklearn.metrics.class_likelihood_ratios(y_true, y_pred) returns (LR+, LR-) point estimates only; undefined values (e.g. specificity = 1) become NaN (replace_undefined_by).",
+    "Any zero cell makes the log SE infinite; add 0.5 to all cells (Haldane) before computing a CI.",
+    "Diagnostic odds ratio = LR+ / LR- = (tp*tn)/(fp*fn).",
+]
+see_also = ["diagnostic-accuracy-ci", "confusion-matrix"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.class_likelihood_ratios.html"
+
+[[entry]]
+id = "auc-bootstrap-ci"
+title = "ROC AUC with a bootstrap confidence interval"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.metrics import roc_auc_score\nfrom scipy import stats"
+call = "stats.bootstrap((y_true, score), roc_auc_score, paired=True, method='percentile', rng=rng)"
+aliases = ["auc confidence interval", "roc auc confidence interval", "ci for auc", "bootstrap auc", "auc ci", "c statistic confidence interval", "area under roc curve confidence interval"]
+r = ["pROC::ci.auc", "pROC::ci", "pROC::roc.test"]
+inputs = "0/1 true labels and continuous scores (probabilities or reader confidence)."
+returns = "BootstrapResult with .confidence_interval; the point estimate is roc_auc_score(y_true, score)."
+example = '''
+import numpy as np
+from scipy import stats
+from sklearn.metrics import roc_auc_score
+
+rng = np.random.default_rng(45)
+y_true = rng.integers(0, 2, 150)
+score = y_true * 1.0 + rng.normal(0, 1, 150)            # e.g. a radiomics model output
+
+auc = roc_auc_score(y_true, score)
+result = stats.bootstrap((y_true, score), roc_auc_score, paired=True, vectorized=False,
+                         n_resamples=1000, method="percentile", rng=rng)
+print("AUC =", round(auc, 3), " 95% CI:", np.round([result.confidence_interval.low, result.confidence_interval.high], 3))
+
+# AUC equals the Mann-Whitney U of positives vs negatives divided by n_pos * n_neg
+u = stats.mannwhitneyu(score[y_true == 1], score[y_true == 0]).statistic
+assert np.isclose(auc, u / ((y_true == 1).sum() * (y_true == 0).sum()))
+'''
+caveats = [
+    "pROC::ci.auc defaults to the DeLong method; there is no DeLong function in SciPy, statsmodels or scikit-learn. Bootstrap CIs are close for moderate n.",
+    "pROC's bootstrap is stratified (keeps the case/control counts). scipy.stats.bootstrap is not; for small samples resample positives and negatives separately in a loop.",
+    "A resample with only one class makes roc_auc_score raise; unlikely with >= 20 of each class.",
+    "Comparing two correlated AUCs (pROC::roc.test) needs a paired bootstrap of the AUC difference on the same resampled indices.",
+]
+see_also = ["roc-auc", "bootstrap-ci", "mann-whitney", "diagnostic-accuracy-ci"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html"
+
+[[entry]]
+id = "lin-ccc"
+title = "Lin's concordance correlation coefficient (CCC) for agreement"
+kind = "evaluate"
+library = "NumPy"
+import = "import numpy as np"
+call = "2 * cov_xy / (var_x + var_y + (mean_x - mean_y) ** 2)"
+aliases = ["concordance correlation coefficient", "lins ccc", "lin concordance", "ccc agreement", "agreement continuous measurements", "reproducibility coefficient"]
+r = ["DescTools::CCC", "epiR::epi.ccc"]
+inputs = "Two equal-length arrays of paired continuous measurements."
+returns = "CCC in [-1, 1] = Pearson r x bias correction factor; computed by hand."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(46)
+reference = rng.normal(60, 12, 50)                         # e.g. ejection fraction by MRI
+echo = 0.9 * reference + 8 + rng.normal(0, 4, 50)          # echo: correlated but biased
+
+def lins_ccc(x, y):
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    cov_xy = np.mean((x - x.mean()) * (y - y.mean()))    # 1/n, as in Lin (1989)
+    return 2 * cov_xy / (x.var() + y.var() + (x.mean() - y.mean()) ** 2)
+
+ccc = lins_ccc(reference, echo)
+pearson_r = stats.pearsonr(reference, echo).statistic
+print(f"CCC = {ccc:.3f}  (Pearson r = {pearson_r:.3f}, bias factor = {ccc / pearson_r:.3f})")
+
+# Bootstrap CI (DescTools/epiR use a Fisher z CI instead)
+boot = stats.bootstrap((reference, echo), lins_ccc, paired=True, vectorized=False,
+                       n_resamples=999, method="percentile", rng=rng)
+print("95% CI:", np.round([boot.confidence_interval.low, boot.confidence_interval.high], 3))
+assert ccc <= abs(pearson_r) and np.isclose(lins_ccc(reference, reference), 1.0)
+'''
+caveats = [
+    "No SciPy/statsmodels/sklearn function; the formula is three lines. Use 1/n moments (np.var default ddof=0) as Lin (1989) and DescTools::CCC do; ddof=1 changes the value only slightly.",
+    "CCC <= |Pearson r|: it penalizes both location shift and scale shift, so a biased method with r = 0.95 can have a much lower CCC.",
+    "DescTools::CCC and epiR::epi.ccc report a Fisher z-transformed CI; a bootstrap CI is a reasonable substitute.",
+    "sklearn's r2_score is NOT the CCC (it is not symmetric in x and y).",
+]
+see_also = ["bland-altman", "intraclass-corr", "correlation-test"]
+docs = "https://numpy.org/doc/stable/reference/generated/numpy.var.html"

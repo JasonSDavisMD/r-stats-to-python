@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this toolkit or guide in teaching or research, please cite it as below."
+title: "r-stats-to-python: an R-to-Python statistics guide and the statsbench toolkit"
+authors:
+  - family-names: Davis
+    given-names: Jason
+repository-code: "https://github.com/JasonSDavisMD/r-stats-to-python"
+license: MIT
+version: 0.2.0
+date-released: "2026-09-28"
+keywords: [statistics, machine learning, R, Python, scipy, statsmodels, scikit-learn, education]
