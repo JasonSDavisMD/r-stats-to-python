@@ -1,0 +1,237 @@
+# Topic: probability -- link functions, distributions, and classical tests (SciPy).
+# Kinds: evaluate = apply a KNOWN function; nothing is estimated from data.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "expit"
+title = "Inverse logit (logistic sigmoid): log-odds -> probability"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy.special import expit"
+call = "expit(log_odds)"
+aliases = ["inverse logit", "logistic function", "sigmoid", "log odds to probability", "logistic probability from coefficients"]
+r = ["plogis", "boot::inv.logit"]
+inputs = "log_odds: scalar or array of real numbers (e.g. b0 + b1*x)."
+returns = "Probability in (0, 1), same shape as the input."
+example = '''
+import numpy as np
+from scipy.special import expit
+
+b0, b1 = -1.5, 0.8                 # KNOWN coefficients: evaluate, do not fit
+x = np.array([0.0, 1.875, 4.0])
+log_odds = b0 + b1 * x
+probability = expit(log_odds)
+print(probability)                 # middle value is exactly 0.5
+assert np.allclose(probability, 1 / (1 + np.exp(-log_odds)))
+'''
+caveats = [
+    "expit is the INVERSE of logit. expit(0) = 0.5; logit(0.5) = 0.",
+    "Numerically stable for large |log_odds|, unlike a hand-written 1/(1+exp(-z)) which can overflow warnings.",
+    "Use this when coefficients are GIVEN. If you must estimate coefficients from (X, y), see glm-binomial.",
+]
+see_also = ["logit", "log-expit", "glm-binomial", "logistic-predict-known-params"]
+recipe = "examples/01_logistic_known_coefficients.py"
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.expit.html"
+
+[[entry]]
+id = "logit"
+title = "Logit (log-odds): probability -> log-odds"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy.special import logit"
+call = "logit(probability)"
+aliases = ["log odds", "log-odds of a probability", "logit transform", "quantile of logistic"]
+r = ["qlogis", "boot::logit"]
+inputs = "probability: scalar or array in [0, 1]."
+returns = "Log-odds log(p / (1 - p)); -inf at 0 and +inf at 1."
+example = '''
+import numpy as np
+from scipy.special import expit, logit
+
+probability = np.array([0.1, 0.5, 0.9])
+log_odds = logit(probability)
+print(log_odds)                    # [-2.197, 0, 2.197]
+assert np.allclose(expit(log_odds), probability)   # round trip
+'''
+caveats = [
+    "Not to be confused with statsmodels Logit (a MODEL that is fit) or expit (the inverse function).",
+    "Useful to turn a probability cutoff into a log-odds cutoff: p > 0.5  <=>  log_odds > logit(0.5) = 0.",
+]
+see_also = ["expit", "smf-logit"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.logit.html"
+
+[[entry]]
+id = "log-expit"
+title = "Stable log of the logistic probability, log(sigmoid(z))"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy.special import log_expit"
+call = "log_expit(log_odds)"
+aliases = ["log sigmoid", "log probability logistic", "stable log likelihood logistic", "log-likelihood term"]
+r = ["plogis(q, log.p = TRUE)"]
+inputs = "log_odds: array of real numbers."
+returns = "log(expit(z)) computed without underflow; log(1 - p) is log_expit(-z)."
+example = '''
+import numpy as np
+from scipy.special import log_expit
+
+z = np.array([-800.0, 0.0, 800.0])
+print(log_expit(z))                # [-800, -0.693, 0]; naive np.log(expit(z)) gives -inf
+y = np.array([0, 1, 1])
+log_likelihood = np.sum(y * log_expit(z) + (1 - y) * log_expit(-z))
+print(log_likelihood)
+'''
+caveats = ["Use in hand-written negative log-likelihoods so the optimizer never sees log(0)."]
+see_also = ["expit", "minimize", "np-logaddexp"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.log_expit.html"
+
+[[entry]]
+id = "norm-dist"
+title = "Normal distribution: density, CDF, quantile, tail probability"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.norm.pdf(x, loc, scale) / .cdf / .ppf / .sf"
+aliases = ["normal density", "normal cdf", "z score quantile", "normal quantile", "gaussian"]
+r = ["dnorm", "pnorm", "qnorm"]
+inputs = "x or probability; loc = mean, scale = STANDARD DEVIATION."
+returns = "Array of densities, probabilities or quantiles."
+example = '''
+from scipy import stats
+
+print(stats.norm.pdf(0))                   # dnorm(0)
+print(stats.norm.cdf(1.96))                # pnorm(1.96)
+print(stats.norm.ppf(0.975))               # qnorm(0.975)
+print(stats.norm.sf(1.96))                 # pnorm(1.96, lower.tail = FALSE)
+print(stats.norm.cdf(110, loc=100, scale=15))
+'''
+caveats = [
+    "scale is the standard deviation, like R's sd argument, NOT the variance.",
+    "Use .sf (survival function) for upper tails; more accurate than 1 - cdf.",
+    "R's d/p/q/r prefixes map to .pdf/.cdf/.ppf/.rvs (and .pmf for discrete).",
+]
+see_also = ["t-dist", "rng-draws", "mvn-logpdf"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.norm.html"
+
+[[entry]]
+id = "t-dist"
+title = "Student t distribution: p-values and critical values"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy import stats"
+call = "2 * stats.t.sf(abs(t_value), df) ; stats.t.ppf(0.975, df)"
+aliases = ["t critical value", "two sided p value", "t quantile", "p value from t statistic"]
+r = ["pt", "qt", "dt"]
+inputs = "t statistic and degrees of freedom (df)."
+returns = "Tail probabilities or quantiles."
+example = '''
+from scipy import stats
+
+t_value, df = 2.3, 20
+p_two_sided = 2 * stats.t.sf(abs(t_value), df=df)
+t_crit = stats.t.ppf(0.975, df=df)
+print(round(p_two_sided, 4), round(t_crit, 4))
+'''
+caveats = ["A fitted statsmodels result already reports these (.pvalues, .conf_int()); compute by hand only for custom tests."]
+see_also = ["norm-dist", "ols-t-test"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.t.html"
+
+[[entry]]
+id = "binom-dist"
+title = "Binomial / Bernoulli probabilities"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.binom.pmf(k, n, p) / .cdf / .sf"
+aliases = ["binomial probability", "bernoulli", "probability of k successes"]
+r = ["dbinom", "pbinom", "qbinom"]
+inputs = "k successes, n trials, p success probability."
+returns = "Probability mass / cumulative probability."
+example = '''
+from scipy import stats
+
+print(stats.binom.pmf(3, n=10, p=0.2))     # dbinom(3, 10, 0.2)
+print(stats.binom.cdf(3, n=10, p=0.2))     # pbinom(3, 10, 0.2)
+print(stats.bernoulli.pmf([0, 1], p=0.7))
+'''
+see_also = ["norm-dist"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.binom.html"
+
+[[entry]]
+id = "mvn-logpdf"
+title = "Multivariate normal density (e.g. LDA/QDA discriminant by hand)"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy.stats import multivariate_normal"
+call = "multivariate_normal(mean=mu, cov=Sigma).logpdf(X)"
+aliases = ["gaussian class conditional density", "discriminant function", "multivariate gaussian log density"]
+r = ["mvtnorm::dmvnorm"]
+inputs = "mean vector (p,), covariance matrix (p, p), points X (n, p)."
+returns = "Log density per row of X."
+example = '''
+import numpy as np
+from scipy.stats import multivariate_normal
+
+mu = np.array([0.0, 1.0])
+Sigma = np.array([[1.0, 0.3], [0.3, 2.0]])
+X = np.array([[0.0, 1.0], [1.0, 0.0]])
+log_density = multivariate_normal(mean=mu, cov=Sigma).logpdf(X)
+print(log_density)
+# Discriminant score for class k: logpdf(x | k) + log(prior_k); pick the max.
+'''
+see_also = ["lda", "qda"]
+recipe = "examples/06_lda_qda.py"
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.multivariate_normal.html"
+
+[[entry]]
+id = "rng-draws"
+title = "Reproducible random numbers (seeded generator)"
+kind = "compute"
+library = "NumPy"
+import = "import numpy as np"
+call = "rng = np.random.default_rng(seed); rng.normal(loc, scale, size)"
+aliases = ["set seed", "simulate data", "random normal draws", "random sample", "reproducible randomness"]
+r = ["set.seed", "rnorm", "runif", "sample", "rbinom"]
+inputs = "seed (int); distribution parameters; size."
+returns = "NumPy array of draws."
+example = '''
+import numpy as np
+
+rng = np.random.default_rng(598)
+x = rng.normal(loc=0, scale=1, size=5)        # rnorm(5)
+u = rng.uniform(0, 10, size=3)                # runif(3, 0, 10)
+idx = rng.choice(100, size=10, replace=False) # sample(100, 10) but 0-based
+print(x, u, idx, sep="\n")
+'''
+caveats = [
+    "Pass the same rng object into functions instead of reseeding everywhere; results then reproduce after Restart + Run All.",
+    "NumPy's generator is not R's Mersenne-Twister stream: the same seed does not give the same numbers as R.",
+    "scikit-learn functions take random_state=<int> for their own reproducibility.",
+]
+see_also = ["norm-dist", "train-test-split"]
+docs = "https://numpy.org/doc/stable/reference/random/generator.html"
+
+[[entry]]
+id = "ttest"
+title = "t-tests: one-sample, two-sample (Welch/pooled), paired"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.ttest_ind(a, b, equal_var=False)"
+aliases = ["two sample t test", "welch test", "paired t test", "compare two means"]
+r = ["t.test"]
+inputs = "Sample arrays."
+returns = "Result object with .statistic, .pvalue, .confidence_interval()."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(1)
+a, b = rng.normal(0, 1, 30), rng.normal(0.5, 1.5, 25)
+result = stats.ttest_ind(a, b, equal_var=False)    # Welch, R's default
+print(result.statistic, result.pvalue)
+print(result.confidence_interval(confidence_level=0.95))
+'''
+caveats = ["R's t.test defaults to Welch (var.equal = FALSE); SciPy's ttest_ind defaults to equal_var=True. Set it explicitly."]
+see_also = ["t-dist"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ttest_ind.html"

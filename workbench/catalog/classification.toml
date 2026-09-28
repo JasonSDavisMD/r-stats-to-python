@@ -1,0 +1,144 @@
+# Topic: classification -- discriminant analysis, sklearn logistic, and classifier metrics.
+# Key distinction: a classifier's probability, its class decision, and its boundary are three different outputs.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "lda"
+title = "Linear discriminant analysis (LDA)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.discriminant_analysis import LinearDiscriminantAnalysis"
+call = "LinearDiscriminantAnalysis(store_covariance=True).fit(X, y)"
+aliases = ["linear discriminant", "shared covariance classifier", "discriminant boundary", "gaussian classifier"]
+r = ["MASS::lda"]
+inputs = "X (n, p), class labels y."
+returns = "Fitted estimator: .means_, .priors_, .covariance_ (pooled), .coef_, .intercept_, .predict, .predict_proba."
+example = '''
+import numpy as np
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+
+rng = np.random.default_rng(11)
+X = np.vstack([rng.normal([0, 0], 1, (50, 2)), rng.normal([2, 1], 1, (50, 2))])
+y = np.repeat([0, 1], 50)
+lda = LinearDiscriminantAnalysis(store_covariance=True).fit(X, y)
+print(lda.priors_, lda.means_, lda.covariance_, sep="\n")
+# Two-class boundary: intercept_ + coef_ @ x = 0  (a straight line)
+print(lda.intercept_, lda.coef_)
+'''
+caveats = [
+    "Priors default to class proportions, like MASS::lda.",
+    "sklearn's pooled covariance_ divides by n (not n - K), so it differs slightly from R's; boundaries are nearly identical for moderate n.",
+]
+see_also = ["qda", "mvn-logpdf", "decision-boundary-display"]
+recipe = "examples/06_lda_qda.py"
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.discriminant_analysis.LinearDiscriminantAnalysis.html"
+
+[[entry]]
+id = "qda"
+title = "Quadratic discriminant analysis (QDA)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis"
+call = "QuadraticDiscriminantAnalysis(store_covariance=True).fit(X, y)"
+aliases = ["quadratic discriminant", "class specific covariance", "curved decision boundary"]
+r = ["MASS::qda"]
+inputs = "X (n, p), class labels y."
+returns = "Fitted estimator: .means_, .priors_, .covariance_ (one per class), .predict, .predict_proba."
+example = '''
+import numpy as np
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+
+rng = np.random.default_rng(12)
+X = np.vstack([rng.normal([0, 0], 0.5, (60, 2)), rng.normal([1, 1], 1.5, (60, 2))])
+y = np.repeat([0, 1], 60)
+qda = QuadraticDiscriminantAnalysis(store_covariance=True).fit(X, y)
+print(qda.covariance_[0], qda.covariance_[1], sep="\n")
+print(qda.predict_proba(X[:3]))
+'''
+caveats = ["reg_param > 0 shrinks each covariance toward the identity (helps with few samples per class)."]
+see_also = ["lda", "mvn-logpdf"]
+recipe = "examples/06_lda_qda.py"
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis.html"
+
+[[entry]]
+id = "sk-logistic"
+title = "Logistic regression in scikit-learn (penalized by default!)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.linear_model import LogisticRegression"
+call = "LogisticRegression(C=np.inf).fit(X, y)  # unpenalized"
+aliases = ["logistic regression sklearn", "classifier pipeline logistic", "regularized logistic"]
+r = ["glm(family = binomial)"]
+inputs = "X (n, p), y labels."
+returns = "Estimator: .coef_, .intercept_, .predict_proba(X)[:, 1], .predict(X)."
+example = '''
+import numpy as np
+from scipy.special import expit
+from sklearn.linear_model import LogisticRegression
+
+rng = np.random.default_rng(13)
+X = rng.normal(size=(400, 2))
+y = rng.binomial(1, expit(-0.5 + X @ np.array([1.5, -1.0])))
+unpenalized = LogisticRegression(C=np.inf).fit(X, y)        # matches R glm
+default = LogisticRegression().fit(X, y)                     # L2 with C=1.0
+print(unpenalized.intercept_, unpenalized.coef_)
+print(default.intercept_, default.coef_)                     # shrunk toward 0
+'''
+caveats = [
+    "DEFAULT IS L2-PENALIZED (C=1.0), so coefficients differ from R's glm. Use C=np.inf to match (scikit-learn >= 1.8; older code wrote penalty=None, now deprecated).",
+    ".predict uses probability > 0.5; for another cutoff threshold predict_proba yourself.",
+    "No standard errors; use glm-binomial for inference.",
+    "For glmnet-style PENALIZED logistic regression keep a finite C (C is roughly 1 / (n * lambda)) and set l1_ratio (0 = ridge, 1 = lasso) with solver='saga'.",
+]
+see_also = ["glm-binomial", "confusion-matrix"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html"
+
+[[entry]]
+id = "confusion-matrix"
+title = "Confusion matrix, accuracy, sensitivity and specificity"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import accuracy_score, confusion_matrix"
+call = "confusion_matrix(y_true, y_pred, labels=[0, 1])"
+aliases = ["misclassification rate", "error rate", "classification table", "sensitivity specificity", "true positive"]
+r = ["table(actual, predicted)", "caret::confusionMatrix"]
+inputs = "True labels and predicted labels."
+returns = "Array [[TN, FP], [FN, TP]] when labels=[0, 1]."
+example = '''
+import numpy as np
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+y_true = np.array([0, 0, 1, 1, 1, 0])
+y_pred = np.array([0, 1, 1, 1, 0, 0])
+tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+print(tn, fp, fn, tp)
+print("accuracy", accuracy_score(y_true, y_pred), "error", 1 - accuracy_score(y_true, y_pred))
+print("sensitivity", tp / (tp + fn), "specificity", tn / (tn + fp))
+'''
+caveats = ["sklearn puts TRUE labels on rows, predicted on columns; R's table() order depends on argument order."]
+see_also = ["roc-auc", "sk-logistic"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.confusion_matrix.html"
+
+[[entry]]
+id = "roc-auc"
+title = "ROC curve and AUC"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import roc_auc_score, roc_curve"
+call = "roc_auc_score(y_true, probability)"
+aliases = ["area under curve", "roc", "threshold tradeoff"]
+r = ["pROC::roc", "pROC::auc"]
+inputs = "True 0/1 labels; predicted probabilities (not classes)."
+returns = "AUC float; roc_curve returns fpr, tpr, thresholds."
+example = '''
+import numpy as np
+from sklearn.metrics import roc_auc_score, roc_curve
+
+y_true = np.array([0, 0, 1, 1])
+probability = np.array([0.1, 0.4, 0.35, 0.8])
+print(roc_auc_score(y_true, probability))
+fpr, tpr, thresholds = roc_curve(y_true, probability)
+print(fpr, tpr)
+'''
+see_also = ["confusion-matrix"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.roc_auc_score.html"

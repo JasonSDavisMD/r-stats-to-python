@@ -1,0 +1,163 @@
+# Topic: plotting -- Matplotlib / seaborn pictures of data and of fitted results.
+# Key distinction: a plot SHOWS a computed result; it does not replace the computation.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "plt-subplots"
+title = "Figure with one or more panels; scatter and line"
+kind = "visualize"
+library = "Matplotlib"
+import = "import matplotlib.pyplot as plt"
+call = "fig, ax = plt.subplots(1, 2, figsize=(10, 4)); ax[0].scatter(x, y)"
+aliases = ["scatter plot", "line plot", "multiple panels", "par mfrow", "plot"]
+r = ["plot", "par(mfrow = c(1, 2))", "lines", "abline"]
+inputs = "Rows, columns of panels."
+returns = "Figure and Axes objects; draw on the Axes."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+
+x = np.linspace(0, 10, 50)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+axes[0].scatter(x, np.sin(x), s=10)
+axes[0].axhline(0, color="grey", linewidth=0.8)      # abline(h = 0)
+axes[1].plot(x, np.cos(x), color="red")
+axes[1].set(xlabel="x", ylabel="cos(x)", title="panel 2")
+fig.tight_layout()
+plt.close(fig)       # in a notebook, omit this line to see the figure
+'''
+see_also = ["contour-region", "sns-regplot"]
+docs = "https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.subplots.html"
+
+[[entry]]
+id = "contour-region"
+title = "Shade a 2-D decision region and draw its boundary"
+kind = "visualize"
+library = "Matplotlib"
+import = "import matplotlib.pyplot as plt"
+call = "ax.contourf(xx, yy, zz, levels=[-inf, 0, inf]); ax.contour(xx, yy, zz, levels=[0])"
+aliases = ["decision boundary plot", "plot decision region", "meshgrid", "contour at zero", "classification region picture"]
+r = ["contour", "filled.contour", "expand.grid"]
+inputs = "Grid from np.meshgrid; score (e.g. log-odds) evaluated on the grid."
+returns = "Contour set artists."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+
+xx, yy = np.meshgrid(np.linspace(-3, 3, 200), np.linspace(-3, 3, 200))
+log_odds = -0.5 + 1.0 * xx + 0.0 * yy          # given coefficients (b2 = 0)
+fig, ax = plt.subplots()
+ax.contourf(xx, yy, log_odds >= 0, levels=[-0.5, 0.5, 1.5], alpha=0.3)
+ax.contour(xx, yy, log_odds, levels=[0], colors="black")   # the boundary line
+ax.set(xlabel="x1", ylabel="x2")
+plt.close(fig)
+'''
+caveats = ["The picture cannot tell > from >= on the line itself; state the tie rule in words or with sympy-solveset."]
+see_also = ["sympy-solveset", "decision-boundary-display"]
+recipe = "examples/02_logistic_decision_boundary.py"
+docs = "https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.contourf.html"
+
+[[entry]]
+id = "decision-boundary-display"
+title = "Decision boundary of a FITTED sklearn classifier"
+kind = "visualize"
+library = "scikit-learn"
+import = "from sklearn.inspection import DecisionBoundaryDisplay"
+call = "DecisionBoundaryDisplay.from_estimator(fitted_model, X, response_method='predict')"
+aliases = ["plot classifier boundary", "lda boundary plot", "qda boundary plot"]
+r = ["klaR::partimat"]
+inputs = "Fitted classifier with exactly 2 features; X for axis limits."
+returns = "Display object; .ax_ is the Matplotlib Axes."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.inspection import DecisionBoundaryDisplay
+
+rng = np.random.default_rng(27)
+X = np.vstack([rng.normal(0, 0.6, (50, 2)), rng.normal(1.5, 1.2, (50, 2))])
+y = np.repeat([0, 1], 50)
+qda = QuadraticDiscriminantAnalysis().fit(X, y)
+display = DecisionBoundaryDisplay.from_estimator(qda, X, response_method="predict", alpha=0.3)
+display.ax_.scatter(X[:, 0], X[:, 1], c=y, s=12)
+plt.close(display.figure_)
+'''
+see_also = ["lda", "qda", "contour-region"]
+recipe = "examples/06_lda_qda.py"
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.inspection.DecisionBoundaryDisplay.html"
+
+[[entry]]
+id = "sns-regplot"
+title = "Scatter with fitted line; pairs plot; histogram"
+kind = "visualize"
+library = "seaborn"
+import = "import seaborn as sns"
+call = "sns.regplot(data=df, x='x', y='y') ; sns.pairplot(df) ; sns.histplot(df['x'])"
+aliases = ["regression line plot", "pairs", "scatterplot matrix", "histogram", "logistic curve plot"]
+r = ["pairs", "hist", "ggplot2::geom_smooth"]
+inputs = "DataFrame and column names."
+returns = "Axes (regplot/histplot) or PairGrid."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+
+rng = np.random.default_rng(28)
+df = pd.DataFrame({"x": rng.normal(size=60)})
+df["y"] = 2 * df["x"] + rng.normal(size=60)
+ax = sns.regplot(data=df, x="x", y="y")
+plt.close(ax.figure)
+'''
+see_also = ["plt-subplots"]
+docs = "https://seaborn.pydata.org/generated/seaborn.regplot.html"
+
+[[entry]]
+id = "qqplot"
+title = "Normal Q-Q plot of residuals"
+kind = "visualize"
+library = "statsmodels"
+import = "import statsmodels.api as sm"
+call = "sm.qqplot(model.resid, line='45', fit=True)"
+aliases = ["quantile quantile plot", "normality of residuals", "qq plot"]
+r = ["qqnorm", "qqline"]
+inputs = "1-D residuals."
+returns = "Figure."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+import statsmodels.api as sm
+
+residuals = np.random.default_rng(29).normal(size=100)
+fig = sm.qqplot(residuals, line="45", fit=True)
+plt.close(fig)
+'''
+see_also = ["ols-diagnostics"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.graphics.gofplots.qqplot.html"
+
+[[entry]]
+id = "plot-tree"
+title = "Draw a fitted decision tree"
+kind = "visualize"
+library = "scikit-learn"
+import = "from sklearn.tree import plot_tree"
+call = "plot_tree(tree, feature_names=[...], filled=True)"
+aliases = ["tree diagram", "visualize tree"]
+r = ["rpart.plot::rpart.plot", "plot(tree); text(tree)"]
+inputs = "Fitted tree."
+returns = "List of annotation artists."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor, plot_tree
+
+rng = np.random.default_rng(30)
+X = rng.uniform(0, 10, size=(80, 2))
+y = X[:, 0] + rng.normal(size=80)
+tree = DecisionTreeRegressor(max_depth=2).fit(X, y)
+fig, ax = plt.subplots(figsize=(8, 4))
+plot_tree(tree, feature_names=["x1", "x2"], filled=True, ax=ax)
+plt.close(fig)
+'''
+see_also = ["tree-regressor"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.tree.plot_tree.html"

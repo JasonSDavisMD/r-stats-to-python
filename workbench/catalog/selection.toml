@@ -1,0 +1,221 @@
+# Topic: selection -- train/test error, cross-validation, subset selection, pipelines.
+# Key distinction: training error measures fit; test/CV error estimates prediction.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "train-test-split"
+title = "Split data into training and test sets"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.model_selection import train_test_split"
+call = "train_test_split(X, y, test_size=0.25, random_state=0)"
+aliases = ["holdout set", "test set", "validation split", "random split"]
+r = ["sample(nrow(df), ...)", "caret::createDataPartition"]
+inputs = "Arrays/DataFrames with the same number of rows."
+returns = "X_train, X_test, y_train, y_test (in that order)."
+example = '''
+import numpy as np
+from sklearn.model_selection import train_test_split
+
+X = np.arange(20).reshape(10, 2)
+y = np.arange(10)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+print(X_train.shape, X_test.shape)
+'''
+caveats = ["If the course specifies which rows are training rows, use those rows; do not re-split randomly."]
+see_also = ["mse", "cross-val-score"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html"
+
+[[entry]]
+id = "mse"
+title = "Mean squared error (train or test MSE)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import mean_squared_error"
+call = "mean_squared_error(y_true, y_pred)"
+aliases = ["test mse", "train mse", "prediction error", "rmse", "residual sum of squares"]
+r = ["mean((y - yhat)^2)"]
+inputs = "Observed and predicted values."
+returns = "float."
+example = '''
+import numpy as np
+from sklearn.metrics import mean_squared_error
+
+y_true = np.array([3.0, 5.0, 2.0])
+y_pred = np.array([2.5, 5.0, 3.0])
+mse = mean_squared_error(y_true, y_pred)
+print(mse, np.sqrt(mse))
+assert np.isclose(mse, np.mean((y_true - y_pred) ** 2))
+'''
+caveats = ["RSS = n * MSE. Some texts define MSE with n - p in the denominator (an unbiased variance estimate); read the question."]
+see_also = ["best-subset", "train-test-split"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.mean_squared_error.html"
+
+[[entry]]
+id = "best-subset"
+title = "Best subset selection (exhaustive search over predictor sets)"
+kind = "fit"
+library = "psl.recipes (scikit-learn)"
+import = "from psl.recipes.best_subset import best_subset"
+call = "best_subset(X_train_df, y_train)"
+aliases = ["best subset", "all subsets regression", "regsubsets", "exhaustive model search", "subset selection mse"]
+r = ["leaps::regsubsets"]
+inputs = "X DataFrame (named predictor columns), y; optional max_size."
+returns = "DataFrame: size, predictors (tuple), rss, train_mse, r2 -- best model per size."
+example = '''
+import numpy as np
+import pandas as pd
+from psl.recipes.best_subset import best_subset
+
+rng = np.random.default_rng(14)
+X = pd.DataFrame(rng.normal(size=(80, 4)), columns=["a", "b", "c", "d"])
+y = 2 * X["a"] - X["c"] + rng.normal(scale=0.5, size=80)
+table = best_subset(X, y)
+print(table)
+# Refit the chosen size yourself so the library call stays visible:
+# LinearRegression().fit(X[list(table.loc[2, "predictors"])], y)
+'''
+caveats = [
+    "Training RSS always decreases with size; choose size by test MSE, CV, Cp/AIC/BIC -- never by training error.",
+    "2**p models: fine for p <= ~15. For larger p use SequentialFeatureSelector (forward/backward).",
+]
+see_also = ["mse", "sequential-selection", "cross-val-score"]
+recipe = "examples/04_best_subset_mse.py"
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LinearRegression.html"
+
+[[entry]]
+id = "sequential-selection"
+title = "Forward / backward stepwise feature selection"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.feature_selection import SequentialFeatureSelector"
+call = "SequentialFeatureSelector(LinearRegression(), n_features_to_select=k, direction='forward').fit(X, y)"
+aliases = ["stepwise regression", "forward selection", "backward elimination", "step"]
+r = ["step", "MASS::stepAIC", "leaps::regsubsets(method = 'forward')"]
+inputs = "Estimator, number of features, direction, cv."
+returns = "Selector with .get_support() / .get_feature_names_out()."
+example = '''
+import numpy as np
+import pandas as pd
+from sklearn.feature_selection import SequentialFeatureSelector
+from sklearn.linear_model import LinearRegression
+
+rng = np.random.default_rng(15)
+X = pd.DataFrame(rng.normal(size=(100, 5)), columns=list("abcde"))
+y = 3 * X["b"] + X["e"] + rng.normal(size=100)
+selector = SequentialFeatureSelector(LinearRegression(), n_features_to_select=2, direction="forward", cv=5)
+selector.fit(X, y)
+print(selector.get_feature_names_out())
+'''
+caveats = ["Selects by cross-validated score, not AIC like R's step(). For AIC, loop over smf.ols fits and compare .aic."]
+see_also = ["best-subset"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.SequentialFeatureSelector.html"
+
+[[entry]]
+id = "cross-val-score"
+title = "K-fold cross-validation score for any model (incl. trees)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.model_selection import KFold, cross_val_score"
+call = "cross_val_score(model, X, y, cv=KFold(5, shuffle=True, random_state=0), scoring='neg_mean_squared_error')"
+aliases = ["cross validation", "k fold", "cv error", "cross validation for a tree", "validation error estimate", "loocv"]
+r = ["boot::cv.glm", "caret::train"]
+inputs = "Unfitted estimator, X, y, cv splitter, scoring name."
+returns = "Array of per-fold scores (refits the model once per fold)."
+example = '''
+import numpy as np
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.tree import DecisionTreeRegressor
+
+rng = np.random.default_rng(16)
+X = rng.uniform(0, 10, size=(200, 1))
+y = np.sin(X[:, 0]) + rng.normal(scale=0.3, size=200)
+cv = KFold(n_splits=5, shuffle=True, random_state=0)
+for depth in [1, 3, 6]:
+    scores = cross_val_score(DecisionTreeRegressor(max_depth=depth, random_state=0), X, y,
+                             cv=cv, scoring="neg_mean_squared_error")
+    print(depth, -scores.mean())              # negate: sklearn maximizes scores
+'''
+caveats = [
+    "Error metrics come back NEGATED ('neg_mean_squared_error'); flip the sign.",
+    "Use LeaveOneOut() as cv for LOOCV.",
+]
+see_also = ["grid-search-cv", "tree-regressor", "mse"]
+recipe = "examples/05_regression_tree.py"
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.cross_val_score.html"
+
+[[entry]]
+id = "grid-search-cv"
+title = "Choose a tuning parameter by cross-validation"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.model_selection import GridSearchCV"
+call = "GridSearchCV(estimator, {'max_depth': [1, 2, 3]}, cv=5).fit(X, y)"
+aliases = ["tune hyperparameter", "choose penalty by cv", "model tuning", "grid search"]
+r = ["caret::train(tuneGrid = ...)", "tune"]
+inputs = "Estimator, parameter grid dict, cv, scoring."
+returns = "Fitted search: .best_params_, .best_score_, .cv_results_, .best_estimator_."
+example = '''
+import numpy as np
+from sklearn.model_selection import GridSearchCV
+from sklearn.tree import DecisionTreeRegressor
+
+rng = np.random.default_rng(17)
+X = rng.uniform(0, 10, size=(150, 2))
+y = X[:, 0] ** 2 + rng.normal(size=150)
+search = GridSearchCV(DecisionTreeRegressor(random_state=0), {"max_depth": [1, 2, 4, 8]},
+                      cv=5, scoring="neg_mean_squared_error").fit(X, y)
+print(search.best_params_, -search.best_score_)
+'''
+see_also = ["cross-val-score", "sk-pipeline"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html"
+
+[[entry]]
+id = "sk-pipeline"
+title = "Pipelines: preprocessing + model fit together (no leakage in CV)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler"
+call = "make_pipeline(StandardScaler(), model).fit(X, y)"
+aliases = ["preprocessing", "standardize then fit", "column transformer", "one hot encoder pipeline", "data leakage"]
+r = ["recipes::recipe", "caret::preProcess"]
+inputs = "Transformer steps then a final estimator."
+returns = "Pipeline that behaves like one estimator (fit / predict / score)."
+example = '''
+import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+rng = np.random.default_rng(18)
+X = rng.normal(size=(100, 3)) * [1, 100, 0.01]
+y = X[:, 0] + rng.normal(size=100)
+pipe = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+print(cross_val_score(pipe, X, y, cv=5).mean())    # scaler refit inside each fold
+'''
+see_also = ["standard-scaler", "ridge-lasso", "cross-val-score"]
+docs = "https://scikit-learn.org/stable/modules/compose.html#pipeline"
+
+[[entry]]
+id = "standard-scaler"
+title = "Standardize features (mean 0, sd 1)"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.preprocessing import StandardScaler"
+call = "StandardScaler().fit_transform(X)"
+aliases = ["scale", "z score", "normalize features", "center and scale"]
+r = ["scale"]
+inputs = "X (n, p)."
+returns = "Standardized array; fitted scaler keeps .mean_ and .scale_."
+example = '''
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+
+X = np.array([[1.0, 100.0], [2.0, 200.0], [3.0, 300.0]])
+Z = StandardScaler().fit_transform(X)
+print(Z, Z.std(axis=0))
+'''
+caveats = ["Uses the population sd (divide by n); R's scale() uses n - 1. Values differ by sqrt(n/(n-1))."]
+see_also = ["sk-pipeline", "np-broadcasting"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html"

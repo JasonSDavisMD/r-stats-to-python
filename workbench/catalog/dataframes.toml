@@ -1,0 +1,158 @@
+# Topic: dataframes -- pandas tables, cleaning, and conversion to model inputs.
+# Key distinction: a DataFrame has labels (index + column names); a NumPy array does not.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "read-csv"
+title = "Read a CSV / whitespace-delimited file into a DataFrame"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "pd.read_csv(path)  # sep=r'\\s+' for whitespace"
+aliases = ["load data", "import csv", "read table", "read text file"]
+r = ["read.csv", "read.table", "readr::read_csv"]
+inputs = "File path or URL; sep, header, names options."
+returns = "DataFrame."
+example = '''
+import io
+import pandas as pd
+
+text = "y x1 x2\n1.0 2 3\n2.5 4 1\n"
+df = pd.read_csv(io.StringIO(text), sep=r"\s+")
+print(df)
+print(df.dtypes)
+'''
+caveats = ["Paths on Windows: use forward slashes or a raw string r'C:\\data\\file.csv'."]
+see_also = ["df-inspect"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html"
+
+[[entry]]
+id = "df-inspect"
+title = "Inspect a DataFrame: head, info, describe"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df.head() ; df.info() ; df.describe()"
+aliases = ["summary of data", "structure of data", "column types", "first rows", "view data"]
+r = ["head", "str", "summary(df)", "View"]
+inputs = "DataFrame."
+returns = "Printed summaries (info) or DataFrames (head/describe)."
+example = '''
+import pandas as pd
+
+df = pd.DataFrame({"age": [30, 45, 60], "group": ["a", "b", "a"]})
+print(df.head())
+df.info()
+print(df.describe(include="all"))
+'''
+caveats = ["In VS Code, open the DataFrame from the Jupyter Variables panel for a sortable Data Viewer (or Data Wrangler)."]
+see_also = ["df-filter"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.describe.html"
+
+[[entry]]
+id = "df-filter"
+title = "Select columns and filter rows"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df.loc[df['age'] > 40, ['age', 'group']]"
+aliases = ["subset rows", "select columns", "boolean indexing", "where clause"]
+r = ["subset", "df[df$age > 40, ]", "dplyr::filter", "dplyr::select"]
+inputs = "Boolean row mask and/or column labels."
+returns = "DataFrame (use .copy() before modifying)."
+example = '''
+import pandas as pd
+
+df = pd.DataFrame({"age": [30, 45, 60], "group": ["a", "b", "a"]})
+older = df.loc[(df["age"] > 40) & (df["group"] == "a"), ["age"]].copy()
+print(older)
+'''
+caveats = ["Combine conditions with & | ~ and parentheses, not and/or/not."]
+see_also = ["df-inspect", "df-dropna"]
+docs = "https://pandas.pydata.org/docs/user_guide/indexing.html"
+
+[[entry]]
+id = "df-dropna"
+title = "Missing values: count, drop, fill"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df.isna().sum() ; df.dropna(subset=cols) ; df.fillna(value)"
+aliases = ["missing data", "complete cases", "na omit", "impute"]
+r = ["is.na", "na.omit", "complete.cases"]
+inputs = "DataFrame."
+returns = "Counts per column, or a new DataFrame."
+example = '''
+import numpy as np
+import pandas as pd
+
+df = pd.DataFrame({"y": [1.0, np.nan, 3.0], "x": [1.0, 2.0, np.nan]})
+print(df.isna().sum())
+print(df.dropna())
+'''
+caveats = ["statsmodels formulas drop incomplete rows silently (missing='drop'); scikit-learn raises an error on NaN for most models."]
+see_also = ["df-filter"]
+docs = "https://pandas.pydata.org/docs/user_guide/missing_data.html"
+
+[[entry]]
+id = "df-groupby"
+title = "Group-wise summaries"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df.groupby('group')['y'].agg(['mean', 'std', 'size'])"
+aliases = ["aggregate by group", "tapply", "summary by category", "class means"]
+r = ["tapply", "aggregate", "dplyr::group_by"]
+inputs = "Grouping column(s) and value column(s)."
+returns = "DataFrame indexed by group."
+example = '''
+import pandas as pd
+
+df = pd.DataFrame({"group": ["a", "a", "b", "b"], "y": [1.0, 3.0, 10.0, 14.0]})
+print(df.groupby("group")["y"].agg(["mean", "std", "size"]))
+'''
+docs = "https://pandas.pydata.org/docs/user_guide/groupby.html"
+
+[[entry]]
+id = "df-categorical"
+title = "Factors / categorical variables and dummy (one-hot) columns"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df['g'].astype('category') ; pd.get_dummies(df, columns=['g'], drop_first=True)"
+aliases = ["factor", "one hot encoding", "dummy variables", "indicator variables", "model matrix"]
+r = ["factor", "as.factor", "model.matrix"]
+inputs = "DataFrame with string/categorical columns."
+returns = "Categorical Series, or DataFrame with 0/1 indicator columns."
+example = '''
+import pandas as pd
+
+df = pd.DataFrame({"g": ["ctrl", "trt", "ctrl"], "y": [1.0, 2.0, 1.5]})
+df["g"] = pd.Categorical(df["g"], categories=["ctrl", "trt"])  # ctrl = reference
+print(pd.get_dummies(df, columns=["g"], drop_first=True, dtype=float))
+'''
+caveats = ["statsmodels formulas do this automatically with C(g); scikit-learn needs OneHotEncoder or get_dummies."]
+see_also = ["smf-ols", "sk-pipeline"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.get_dummies.html"
+
+[[entry]]
+id = "df-to-numpy"
+title = "DataFrame -> NumPy array (and why labels are lost)"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "df[['x1', 'x2']].to_numpy()"
+aliases = ["as matrix", "convert dataframe to array", "values"]
+r = ["as.matrix"]
+inputs = "DataFrame or Series."
+returns = "NumPy ndarray (no column names, no index)."
+example = '''
+import pandas as pd
+
+df = pd.DataFrame({"x1": [1, 2], "x2": [3, 4]})
+X = df[["x1", "x2"]].to_numpy(dtype=float)
+print(X, X.shape)
+'''
+caveats = ["Most sklearn and statsmodels calls accept DataFrames directly and keep names in output; convert only for linear algebra."]
+see_also = ["np-shape"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.to_numpy.html"

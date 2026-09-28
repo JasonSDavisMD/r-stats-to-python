@@ -1,0 +1,16 @@
+{
+  // F5 debugs the open file. Set breakpoints by clicking left of a line number.
+  // For a single notebook/# %% cell use "Debug Cell" instead.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

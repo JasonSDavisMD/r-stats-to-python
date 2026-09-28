@@ -1,0 +1,29 @@
+{
+  // Terminal opens with the selected interpreter (.venv) activated, so the
+  // `psl` command and `python` match the notebook kernel.
+  "python.terminal.activateEnvironment": true,
+
+  // Notebooks and # %% files run with the workbench folder as working dir.
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+
+  // Test Explorer runs tests/ with pytest.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  // Richer completions/hover from Pylance without type-error noise.
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.autoImportCompletions": true,
+  "editor.parameterHints.enabled": true,
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.ipynb_checkpoints": true,
+    "**/.pytest_cache": true
+  },
+  // Ctrl+Shift+F searches the catalog and examples, not installed packages.
+  "search.exclude": {
+    "**/.venv": true,
+    "uv.lock": true
+  }
+}

@@ -1,0 +1,112 @@
+# Topic: splines -- smoothing splines, regression splines, polynomial terms.
+# Key distinction: a smoothing spline penalizes roughness (lam); a regression spline fixes knots/df.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "smoothing-spline"
+title = "Smoothing spline with roughness penalty lam (GCV if not given)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy.interpolate import make_smoothing_spline"
+call = "make_smoothing_spline(x, y, lam=None)"
+aliases = ["smoothing spline", "spline", "penalized spline", "roughness penalty", "smooth spline lambda", "gcv"]
+r = ["smooth.spline"]
+inputs = "x strictly increasing (sort first; no ties), y; lam >= 0 or None for GCV."
+returns = "BSpline object: call it on new x; .derivative(2) for f''."
+example = '''
+import numpy as np
+from scipy.interpolate import make_smoothing_spline
+
+rng = np.random.default_rng(23)
+x = np.sort(rng.uniform(0, 1, 80))
+y = np.sin(2 * np.pi * x) + rng.normal(scale=0.3, size=80)
+gcv_fit = make_smoothing_spline(x, y)             # lam chosen by GCV
+stiff_fit = make_smoothing_spline(x, y, lam=10.0) # large lam -> nearly a straight line
+print(gcv_fit(np.array([0.25, 0.75])), stiff_fit(np.array([0.25, 0.75])))
+'''
+caveats = [
+    "Minimizes sum (y - f(x))^2 + lam * integral f''(t)^2 dt. R's smooth.spline scales lambda differently and is usually tuned by spar or df, so numbers do not transfer.",
+    "x must be strictly increasing: sort, and average y over duplicate x values first.",
+    "lam -> 0 interpolates the data; lam -> infinity gives the least-squares line.",
+]
+see_also = ["spline-transformer", "patsy-bs"]
+recipe = "examples/07_smoothing_spline.py"
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.make_smoothing_spline.html"
+
+[[entry]]
+id = "patsy-bs"
+title = "Regression splines inside a statsmodels formula (B-spline / natural spline)"
+kind = "fit"
+library = "statsmodels (patsy)"
+import = "import statsmodels.formula.api as smf"
+call = "smf.ols('y ~ bs(x, df=5)', data=df).fit()  # cr(x, df=5) for natural cubic"
+aliases = ["b spline basis", "natural spline", "regression spline", "basis expansion", "knots"]
+r = ["splines::bs", "splines::ns"]
+inputs = "Formula using bs(x, df=..., degree=3) or cr(x, df=...)."
+returns = "Ordinary OLS results with spline basis columns."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(24)
+df = pd.DataFrame({"x": rng.uniform(0, 10, 120)})
+df["y"] = np.sin(df["x"]) + rng.normal(scale=0.3, size=120)
+model = smf.ols("y ~ bs(x, df=6)", data=df).fit()
+print(model.rsquared, len(model.params))
+'''
+caveats = ["patsy's cr() is a natural cubic regression spline, analogous to (not identical with) R's ns()."]
+see_also = ["smoothing-spline", "spline-transformer", "poly-terms"]
+docs = "https://patsy.readthedocs.io/en/latest/spline-regression.html"
+
+[[entry]]
+id = "spline-transformer"
+title = "Spline basis features for scikit-learn pipelines"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.preprocessing import SplineTransformer"
+call = "make_pipeline(SplineTransformer(n_knots=6, degree=3), Ridge()).fit(X, y)"
+aliases = ["spline features", "b spline features sklearn", "nonlinear basis"]
+r = ["splines::bs"]
+inputs = "X (n, 1) or more columns; n_knots, degree."
+returns = "Transformer producing B-spline basis columns."
+example = '''
+import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import SplineTransformer
+
+rng = np.random.default_rng(25)
+X = np.sort(rng.uniform(0, 10, 100)).reshape(-1, 1)
+y = np.sin(X[:, 0]) + rng.normal(scale=0.3, size=100)
+model = make_pipeline(SplineTransformer(n_knots=6, degree=3), Ridge(alpha=1e-3)).fit(X, y)
+print(model.score(X, y))
+'''
+see_also = ["patsy-bs", "sk-pipeline"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.SplineTransformer.html"
+
+[[entry]]
+id = "poly-terms"
+title = "Polynomial regression terms"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.ols('y ~ x + I(x**2) + I(x**3)', data=df).fit()"
+aliases = ["polynomial regression", "quadratic term", "cubic", "poly"]
+r = ["poly(x, 3, raw = TRUE)", "I(x^2)"]
+inputs = "Formula with I(x**k) terms."
+returns = "OLS results."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(26)
+df = pd.DataFrame({"x": rng.uniform(-2, 2, 100)})
+df["y"] = 1 - df["x"] + 0.5 * df["x"] ** 3 + rng.normal(scale=0.3, size=100)
+model = smf.ols("y ~ x + I(x**2) + I(x**3)", data=df).fit()
+print(model.params.round(3))
+'''
+caveats = ["R's poly() default is ORTHOGONAL polynomials; I(x**k) is raw. Same fitted values, different coefficients."]
+see_also = ["patsy-bs", "smf-ols"]
+docs = "https://www.statsmodels.org/stable/example_formulas.html"
