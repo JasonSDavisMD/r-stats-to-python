@@ -5,6 +5,10 @@
   "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "containerEnv": { "UV_LINK_MODE": "copy" },
 
+  // Git LFS: a Codespace first opened on the default image installs an LFS
+  // pre-push hook; without git-lfs here, every later push fails on that hook.
+  "features": { "ghcr.io/devcontainers/features/git-lfs:1": {} },
+
   // Once, when the Codespace is created: install uv and build .venv.
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   // Every start, including after Stop/Resume: bring JupyterLab back up.

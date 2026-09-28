@@ -13,6 +13,10 @@
   // instead of hard-linking avoids a warning on every install.
   "containerEnv": { "UV_LINK_MODE": "copy" },
 
+  // Git LFS: a Codespace first opened on the default image installs an LFS
+  // pre-push hook; without git-lfs here, every later push fails on that hook.
+  "features": { "ghcr.io/devcontainers/features/git-lfs:1": {} },
+
   // Both run from workspaceFolder (workbench/), hence the relative paths.
   // Once, when the Codespace is created: install uv, build .venv (+ JupyterLab).
   "postCreateCommand": "bash ../.devcontainer/post-create.sh",
