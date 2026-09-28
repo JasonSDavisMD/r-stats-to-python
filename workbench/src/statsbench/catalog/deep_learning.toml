@@ -138,7 +138,7 @@ kind = "fit"
 library = "PyTorch"
 import = "import torch\nfrom torch import nn"
 call = "model = nn.Linear(p, 1) ; loss = nn.BCEWithLogitsLoss()(model(X), y) ; prob = torch.sigmoid(model(X_new))"
-aliases = ["pytorch logistic regression", "torch logistic regression", "BCEWithLogitsLoss", "binary cross entropy", "logits", "sigmoid", "log-odds output", "pytorch binary classification"]
+aliases = ["pytorch logistic regression", "torch logistic regression", "BCEWithLogitsLoss", "binary cross entropy", "model outputs logits", "sigmoid", "log-odds output", "pytorch binary classification"]
 r = ["torch::nn_bce_with_logits_loss", "keras::loss_binary_crossentropy"]
 inputs = "float32 X (n, p); float32 0/1 targets y of shape (n, 1)."
 returns = "Module whose output is the LOGIT (log-odds); torch.sigmoid(logit) = expit(logit) = probability."
