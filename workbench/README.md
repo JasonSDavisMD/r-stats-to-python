@@ -20,6 +20,18 @@ This is a workspace, not a new statistics engine. The analysis always uses
 NumPy, SciPy, SymPy, pandas, statsmodels and scikit-learn directly. The
 workbench adds a curated index, reproducible examples and a consistent setup.
 
+> **Coming from RStudio?** Start with
+> **[docs/rstudio-users-start-here.md](docs/rstudio-users-start-here.md)**.
+> It covers the four-pane layout, key translations, and Positron.
+
+## 0. Try it in the browser first (GitHub Codespaces, no install)
+
+On the repository page, click **Code -> Codespaces -> Create codespace on main**.
+The dev container in `.devcontainer/` opens straight into `workbench/`,
+installs `uv`, builds `.venv` from `uv.lock`, adds the Python and Jupyter
+extensions, and runs the environment check. Then follow the four-pane
+steps in the RStudio guide.
+
 ## 1. Windows setup (one time, about 5 minutes)
 
 **Primary path: `uv`.** `uv` installs the pinned Python version and the exact

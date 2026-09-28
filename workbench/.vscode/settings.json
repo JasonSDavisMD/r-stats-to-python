@@ -3,6 +3,10 @@
   // `psl` command and `python` match the notebook kernel.
   "python.terminal.activateEnvironment": true,
 
+  // RStudio-style: selected lines (Shift+Enter) run in the Interactive Window,
+  // the console + plots pane, instead of a plain terminal REPL.
+  "jupyter.interactiveWindow.textEditor.executeSelection": true,
+
   // Notebooks and # %% files run with the workbench folder as working dir.
   "jupyter.notebookFileRoot": "${workspaceFolder}",
 
