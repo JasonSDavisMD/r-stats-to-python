@@ -18,6 +18,11 @@ cd "$WORKBENCH"
 uv sync --frozen --group lab     # exact versions from uv.lock, into ./.venv
 uv run --no-sync python -m statsbench.envcheck
 
+# Activate .venv in every new bash terminal (VS Code, JupyterLab, SSH), so
+# `stats find ...` and `python` always mean the workbench environment.
+ACTIVATE="source $WORKBENCH/.venv/bin/activate"
+grep -qxF "$ACTIVATE" "$HOME/.bashrc" 2>/dev/null || echo "$ACTIVATE" >> "$HOME/.bashrc"
+
 echo
 echo "Workbench ready. JupyterLab starts automatically: Ports tab -> 8888 -> Open in Browser."
 echo "Search the toolbox from a NEW terminal (Ctrl+Shift+\`):  stats find \"inverse logit\""

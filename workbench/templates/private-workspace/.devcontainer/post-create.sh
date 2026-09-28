@@ -16,5 +16,10 @@ cd "$PROJECT"
 uv sync --group lab
 uv run --no-sync python -m statsbench.envcheck
 
+# Activate .venv in every new bash terminal (VS Code, JupyterLab, SSH), so
+# `stats find ...` and `python` always mean this workspace's environment.
+ACTIVATE="source $PROJECT/.venv/bin/activate"
+grep -qxF "$ACTIVATE" "$HOME/.bashrc" 2>/dev/null || echo "$ACTIVATE" >> "$HOME/.bashrc"
+
 echo
 echo "Ready. JupyterLab starts automatically: Ports tab -> 8888 -> Open in Browser."
