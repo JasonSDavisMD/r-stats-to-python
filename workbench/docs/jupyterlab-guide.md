@@ -178,5 +178,9 @@ don't change underneath you.
 * **`ModuleNotFoundError`** in a notebook: the kernel isn't the workspace's
   `.venv`. Use *Python 3 (ipykernel)* from JupyterLab (it runs inside `.venv`),
   then check with `from statsbench.envcheck import main; main()`.
+* **Push fails with "configured for Git LFS but 'git-lfs' was not found":** a
+  leftover hook from the temporary Codespace in Part 1. Run
+  `rm .git/hooks/pre-push`, then push again. (Newer copies of the template
+  install Git LFS, so this no longer happens.)
 * **Anything else:** `python -m statsbench.envcheck` prints the interpreter,
   library versions, add-ons and catalog status. Include it in a bug report.
