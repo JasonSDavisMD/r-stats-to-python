@@ -1,0 +1,494 @@
+# Topic: advanced_regression -- mixed models, GEE, quantile/robust/weighted fits, robust SEs, count/ordinal/multinomial/beta models, GAMs (statsmodels).
+# Key distinction: change the MODEL (mixedlm, gee, quantreg, rlm, negbin...) vs keep OLS and only change the STANDARD ERRORS (fit(cov_type="HC3" / "cluster")).
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "mixedlm"
+title = "Linear mixed-effects model with random intercept and random slope"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.mixedlm('y ~ x', data=df, groups=df['subject'], re_formula='~x').fit()"
+aliases = ["lmer", "linear mixed effects model", "mixed effects model", "mixed model", "multilevel model", "hierarchical linear model", "random intercept", "random slope", "random effects", "repeated measures regression", "lme"]
+r = ["lme4::lmer", "nlme::lme", "lmer(y ~ x + (1 + x | subject))"]
+inputs = "Formula for fixed effects; DataFrame; groups= the grouping column; re_formula= the random-effects formula ('~x' = random intercept + slope for x; omit for random intercept only)."
+returns = "MixedLMResults: .fe_params (fixed effects), .cov_re (random-effect covariance), .scale (residual variance), .random_effects (dict of BLUPs per group), .summary()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(10)
+n_subjects, n_per_subject = 30, 10
+subject = np.repeat(np.arange(n_subjects), n_per_subject)
+time = np.tile(np.linspace(0, 9, n_per_subject), n_subjects)
+subject_intercept = rng.normal(scale=2.0, size=n_subjects)
+subject_slope = rng.normal(scale=0.5, size=n_subjects)
+y = 5 + subject_intercept[subject] + (1.0 + subject_slope[subject]) * time + rng.normal(size=subject.size)
+df = pd.DataFrame({"y": y, "time": time, "subject": subject})
+
+# R: lmer(y ~ time + (1 + time | subject), data = df)
+model = smf.mixedlm("y ~ time", data=df, groups=df["subject"], re_formula="~time").fit()
+print(model.summary())
+print("fixed effects:", model.fe_params.round(3).to_dict())
+print("random-effect covariance:\n", model.cov_re.round(3))
+print("residual variance:", round(model.scale, 3))
+assert abs(model.fe_params["time"] - 1.0) < 0.3
+'''
+caveats = [
+    "REML is the default (reml=True), like lmer. For likelihood-ratio tests between models with different FIXED effects refit with .fit(reml=False) (R: REML = FALSE / anova() refits with ML).",
+    "Grouping is NOT in the formula: R's (1 + x | g) becomes groups=df['g'] plus re_formula='~x'. Random intercept only: omit re_formula. Crossed random effects need vc_formula (awkward); nested/crossed designs are much easier in lme4.",
+    "statsmodels prints z tests and p-values for fixed effects (normal approximation). lmer prints none; lmerTest uses Satterthwaite df, so p-values will differ slightly for small samples.",
+    "Random effect variances appear as 'Group Var', 'Group x x Cov', 'x Var' (variances, not SDs as in lmer's print).",
+    "Only one grouping factor via groups=; convergence warnings are common with random slopes -- try method='lbfgs' or rescaling predictors.",
+]
+see_also = ["smf-ols", "gee", "anova-lm"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.regression.mixed_linear_model.MixedLM.html"
+
+[[entry]]
+id = "gee"
+title = "Generalized estimating equations (GEE) with exchangeable working correlation"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.api as sm\nimport statsmodels.formula.api as smf"
+call = "smf.gee('y ~ x', groups='subject', data=df, family=sm.families.Binomial(), cov_struct=sm.cov_struct.Exchangeable()).fit()"
+aliases = ["gee", "generalized estimating equations", "population averaged model", "marginal model", "clustered binary data", "exchangeable correlation", "geeglm", "working correlation"]
+r = ["geepack::geeglm", "gee::gee", "geeglm(corstr = 'exchangeable')"]
+inputs = "Formula; groups= cluster column name; DataFrame; family (Gaussian default); cov_struct (Independence default)."
+returns = "GEEResults: .params, .bse (robust sandwich SEs by default), .pvalues, .model.cov_struct.summary() (estimated working correlation)."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from scipy.special import expit
+
+rng = np.random.default_rng(13)
+n_subjects, n_visits = 150, 4
+subject = np.repeat(np.arange(n_subjects), n_visits)
+dose = rng.normal(size=subject.size)
+subject_effect = rng.normal(scale=1.5, size=n_subjects)[subject]
+response = rng.binomial(1, expit(-0.3 + 0.9 * dose + subject_effect))
+df = pd.DataFrame({"response": response, "dose": dose, "subject": subject})
+
+model = smf.gee("response ~ dose", groups="subject", data=df,
+                family=sm.families.Binomial(),
+                cov_struct=sm.cov_struct.Exchangeable()).fit()
+print(model.summary())
+print(model.model.cov_struct.summary())      # estimated within-subject correlation
+assert model.params["dose"] > 0
+'''
+caveats = [
+    "Default cov_struct is Independence (geeglm default corstr='independence' too); pass sm.cov_struct.Exchangeable(), AR() or Autoregressive() explicitly.",
+    "Default family is Gaussian; pass family=sm.families.Binomial()/Poisson() as in geeglm(family = ...).",
+    "Reported SEs are robust (sandwich), like geeglm. Use .fit(cov_type='naive') for model-based SEs.",
+    "Rows of the same cluster should be contiguous and in time order for AR structures (same assumption as geepack).",
+    "GEE coefficients are population-averaged: on the logit scale they are smaller in magnitude than subject-specific mixed-model (glmer) coefficients.",
+]
+see_also = ["mixedlm", "glm-binomial", "ols-cluster-se"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.genmod.generalized_estimating_equations.GEE.html"
+
+[[entry]]
+id = "quantreg"
+title = "Quantile regression (median regression and other quantiles)"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.quantreg('y ~ x', data=df).fit(q=0.5)"
+aliases = ["quantile regression", "median regression", "least absolute deviation", "lad regression", "conditional quantile", "rq", "90th percentile regression"]
+r = ["quantreg::rq", "rq(y ~ x, tau = 0.5)"]
+inputs = "Formula; DataFrame; q= quantile in (0, 1) (R: tau)."
+returns = "QuantRegResults: .params, .bse, .pvalues, .conf_int(), .summary()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(14)
+income = rng.uniform(1, 10, 400)
+spending = 2 + 0.5 * income + rng.normal(scale=0.3 * income)   # spread grows with income
+df = pd.DataFrame({"income": income, "spending": spending})
+
+for q in (0.1, 0.5, 0.9):
+    fit = smf.quantreg("spending ~ income", data=df).fit(q=q)
+    print(f"q={q}: slope={fit.params['income']:.3f}")
+median_fit = smf.quantreg("spending ~ income", data=df).fit(q=0.5)
+upper_fit = smf.quantreg("spending ~ income", data=df).fit(q=0.9)
+assert upper_fit.params["income"] > median_fit.params["income"]
+'''
+caveats = [
+    "The quantile is passed to .fit(q=...), not the model constructor; default q=0.5 (median), same as rq's tau=0.5.",
+    "Standard errors default to a robust kernel sandwich (vcov='robust', kernel='epa', bandwidth='hsheather'); rq's summary default for n < 1001 is se='rank' (inverted rank-test intervals), so SEs/CIs differ.",
+    "Fits one quantile per call; loop over q for a quantile process (rq accepts a tau vector).",
+]
+see_also = ["smf-ols", "rlm-huber"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.regression.quantile_regression.QuantReg.html"
+
+[[entry]]
+id = "rlm-huber"
+title = "Robust regression (M-estimation, Huber weights) resistant to outliers"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.api as sm\nimport statsmodels.formula.api as smf"
+call = "smf.rlm('y ~ x', data=df, M=sm.robust.norms.HuberT()).fit()"
+aliases = ["robust regression", "huber regression", "m estimator", "outlier resistant regression", "rlm", "bisquare", "tukey biweight regression", "iteratively reweighted least squares"]
+r = ["MASS::rlm", "rlm(y ~ x, psi = psi.huber)"]
+inputs = "Formula; DataFrame; M= norm (HuberT default, TukeyBiweight, Hampel...)."
+returns = "RLMResults: .params, .bse, .weights (final IRLS weights; small = downweighted outlier), .summary()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(15)
+x = rng.uniform(0, 10, 60)
+y = 1 + 2 * x + rng.normal(size=60)
+y[:5] += 40                                   # five gross outliers
+df = pd.DataFrame({"x": x, "y": y})
+
+ols_fit = smf.ols("y ~ x", data=df).fit()
+robust_fit = smf.rlm("y ~ x", data=df, M=sm.robust.norms.HuberT()).fit()
+print("OLS slope:", round(ols_fit.params["x"], 3), " Huber slope:", round(robust_fit.params["x"], 3))
+print("weights of outliers:", robust_fit.weights.to_numpy()[:5].round(3))
+assert abs(robust_fit.params["x"] - 2) < abs(ols_fit.params["x"] - 2) + 0.05
+'''
+caveats = [
+    "HuberT default tuning t=1.345 matches MASS::rlm's k=1.345; scale is re-estimated by MAD each iteration (scale_est='mad'), as in rlm.",
+    "For redescending psi (R: psi = psi.bisquare) use M=sm.robust.norms.TukeyBiweight(); rlm(method='MM') has no exact one-call equivalent.",
+    "No R-squared is reported, same as MASS::rlm.",
+]
+see_also = ["smf-ols", "quantreg", "ols-diagnostics"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.robust.robust_linear_model.RLM.html"
+
+[[entry]]
+id = "ols-robust-se"
+title = "Heteroscedasticity-robust (sandwich, HC3) standard errors for OLS"
+kind = "evaluate"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.ols('y ~ x', data=df).fit(cov_type='HC3')"
+aliases = ["robust standard errors", "sandwich estimator", "sandwich", "heteroscedasticity robust standard errors", "sandwich standard errors", "white standard errors", "huber white", "hc3", "hc1", "vcovhc", "coeftest", "heteroskedasticity consistent covariance"]
+r = ["sandwich::vcovHC", "lmtest::coeftest", "coeftest(model, vcov = vcovHC(model, type = 'HC3'))"]
+inputs = "Formula; DataFrame; cov_type in 'HC0', 'HC1', 'HC2', 'HC3'."
+returns = "RegressionResults with the same .params but robust .bse, .tvalues, .pvalues, .conf_int()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(16)
+x = rng.uniform(0, 5, 200)
+y = 1 + 0.8 * x + rng.normal(scale=0.2 + 0.6 * x)      # variance grows with x
+df = pd.DataFrame({"x": x, "y": y})
+
+classic = smf.ols("y ~ x", data=df).fit()
+robust = smf.ols("y ~ x", data=df).fit(cov_type="HC3")
+print("classic SE:", round(classic.bse["x"], 4), " HC3 SE:", round(robust.bse["x"], 4))
+print(robust.summary().tables[1])
+assert np.allclose(classic.params, robust.params)     # only the SEs change
+'''
+caveats = [
+    "Default is cov_type='nonrobust' (classic lm SEs). vcovHC's default type is HC3; Stata's ', robust' is HC1.",
+    "With a robust cov_type, statsmodels reports z tests (normal) by default; pass use_t=True to get t tests like coeftest(model, vcovHC(model)).",
+    "To get robust SEs for an already-fitted model: model.get_robustcov_results(cov_type='HC3').",
+]
+see_also = ["ols-cluster-se", "het-breuschpagan", "smf-ols", "wls"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.fit.html"
+
+[[entry]]
+id = "ols-cluster-se"
+title = "Cluster-robust standard errors for OLS (clustered by group)"
+kind = "evaluate"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.ols('y ~ x', data=df).fit(cov_type='cluster', cov_kwds={'groups': df['firm']})"
+aliases = ["cluster robust standard errors", "clustered standard errors", "cluster standard errors by group", "vcovcl", "panel robust standard errors", "within cluster correlation"]
+r = ["sandwich::vcovCL", "coeftest(model, vcov = vcovCL, cluster = ~firm)"]
+inputs = "Formula; DataFrame; cov_kwds={'groups': integer or categorical cluster labels (array/Series)}."
+returns = "RegressionResults with cluster-robust .bse, .pvalues, .conf_int()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(17)
+n_firms, n_years = 40, 10
+firm = np.repeat(np.arange(n_firms), n_years)
+firm_x = rng.normal(size=n_firms)[firm]                  # regressor correlated within firm
+firm_shock = rng.normal(size=n_firms)[firm]              # error correlated within firm
+x = firm_x + 0.3 * rng.normal(size=firm.size)
+y = 0.5 * x + firm_shock + rng.normal(size=firm.size)
+df = pd.DataFrame({"y": y, "x": x, "firm": firm})
+
+classic = smf.ols("y ~ x", data=df).fit()
+clustered = smf.ols("y ~ x", data=df).fit(cov_type="cluster", cov_kwds={"groups": df["firm"]}, use_t=True)
+print("classic SE:", round(classic.bse["x"], 4), " cluster SE:", round(clustered.bse["x"], 4))
+assert clustered.bse["x"] > classic.bse["x"]
+'''
+caveats = [
+    "Groups go in cov_kwds={'groups': ...} (an array, not a column name). Two-way clustering: pass a 2-column integer array.",
+    "statsmodels applies the small-sample factor G/(G-1) * (n-1)/(n-k) by default (use_correction=True), the same as vcovCL's defaults (type = 'HC1', cadjust = TRUE) and Stata's vce(cluster).",
+    "p-values use the normal distribution unless use_t=True (then t with G - 1 df, G = number of clusters).",
+]
+see_also = ["ols-robust-se", "gee", "mixedlm"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.OLS.fit.html"
+
+[[entry]]
+id = "wls"
+title = "Weighted least squares regression (lm with weights)"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.wls('y ~ x', data=df, weights=df['w']).fit()"
+aliases = ["weighted least squares", "weighted regression", "lm weights", "inverse variance weights", "precision weights", "wls"]
+r = ["lm(weights = )", "lm(y ~ x, weights = w)"]
+inputs = "Formula; DataFrame; weights= array proportional to 1/variance of each observation."
+returns = "RegressionResults: .params, .bse, .pvalues, .summary()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(18)
+x = rng.uniform(1, 10, 150)
+noise_sd = 0.3 * x
+y = 2 + 1.5 * x + rng.normal(scale=noise_sd)
+df = pd.DataFrame({"x": x, "y": y, "w": 1 / noise_sd**2})
+
+wls_fit = smf.wls("y ~ x", data=df, weights=df["w"]).fit()
+ols_fit = smf.ols("y ~ x", data=df).fit()
+print(wls_fit.params.round(3).to_dict())
+print("SE(slope) WLS vs OLS:", round(wls_fit.bse["x"], 4), round(ols_fit.bse["x"], 4))
+assert wls_fit.bse["x"] < ols_fit.bse["x"]
+'''
+caveats = [
+    "weights are inverse-variance (precision) weights, the same meaning as lm(weights=). They are NOT frequency or survey weights.",
+    "Pass the weights array (weights=df['w']); a column-name string is not accepted.",
+]
+see_also = ["smf-ols", "ols-robust-se", "het-breuschpagan"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.regression.linear_model.WLS.html"
+
+[[entry]]
+id = "negbin-glm"
+title = "Negative binomial regression for overdispersed counts"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.negativebinomial('y ~ x', data=df).fit()"
+aliases = ["negative binomial regression", "overdispersed counts", "overdispersion", "glm.nb", "negbin", "nb2 model", "count regression overdispersed"]
+r = ["MASS::glm.nb", "glm.nb(y ~ x)"]
+inputs = "Formula; DataFrame with non-negative integer response."
+returns = "NegativeBinomialResults: .params (coefficients plus 'alpha'), .bse, .pvalues, .summary(), .predict()."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(19)
+exposure_score = rng.normal(size=500)
+mean_count = np.exp(1.0 + 0.6 * exposure_score)
+theta = 2.0                                               # R's size / theta
+counts = rng.negative_binomial(theta, theta / (theta + mean_count))
+df = pd.DataFrame({"visits": counts, "exposure_score": exposure_score})
+
+model = smf.negativebinomial("visits ~ exposure_score", data=df).fit(disp=False)
+print(model.params.round(3).to_dict())
+alpha = model.params["alpha"]
+print("alpha =", round(alpha, 3), "-> R theta = 1/alpha =", round(1 / alpha, 3))
+assert 1.2 < 1 / alpha < 3.5
+'''
+caveats = [
+    "Dispersion is alpha with Var = mu + alpha * mu^2; glm.nb reports theta = 1/alpha.",
+    "smf.negativebinomial estimates alpha (like glm.nb). The GLM route smf.glm(..., family=sm.families.NegativeBinomial(alpha=a)) treats alpha as KNOWN; if you omit alpha it warns and silently uses alpha=1.0.",
+    "Response must be counts; for offsets use offset=np.log(df['time']) or exposure=df['time'].",
+]
+see_also = ["glm-poisson", "glm-binomial"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.discrete.discrete_model.NegativeBinomial.html"
+
+[[entry]]
+id = "ordinal-logit"
+title = "Ordinal logistic regression (proportional odds model)"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.miscmodels.ordinal_model import OrderedModel"
+call = "OrderedModel.from_formula('rating ~ x', data=df, distr='logit').fit(method='bfgs')"
+aliases = ["ordinal logistic regression", "ordered logit", "proportional odds model", "cumulative logit", "ordered probit", "polr", "likert outcome regression"]
+r = ["MASS::polr", "ordinal::clm", "polr(rating ~ x, method = 'logistic')"]
+inputs = "Formula with an ORDERED pandas Categorical response; DataFrame; distr='logit' or 'probit'."
+returns = "OrderedResults: .params (slopes then threshold params), .model.transform_threshold_params(params) (cutpoints), .predict() (category probabilities)."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.miscmodels.ordinal_model import OrderedModel
+
+rng = np.random.default_rng(20)
+n = 400
+df = pd.DataFrame({"price": rng.normal(size=n)})
+latent = 1.2 * df["price"] + rng.logistic(size=n)
+labels = np.select([latent < -1, latent < 1], ["low", "mid"], "high")
+df["rating"] = pd.Categorical(labels, categories=["low", "mid", "high"], ordered=True)
+
+model = OrderedModel.from_formula("rating ~ price", data=df, distr="logit").fit(method="bfgs", disp=False)
+print(model.params.round(3))
+cutpoints = model.model.transform_threshold_params(model.params)[1:-1]
+print("cutpoints (R zeta):", cutpoints.round(3))
+print(model.predict(df.head(3)))          # columns = P(low), P(mid), P(high)
+assert abs(model.params["price"] - 1.2) < 0.4
+'''
+caveats = [
+    "No intercept: the formula intercept is dropped automatically (it is absorbed into the thresholds). Do not add a constant column in the array interface.",
+    "Same sign convention as polr: logit P(Y <= j) = zeta_j - x'beta, so a positive slope pushes toward HIGHER categories.",
+    "Threshold params after the first are stored as log-increments (e.g. 'mid/high' = log(zeta_2 - zeta_1)); use model.model.transform_threshold_params(params) to get R's zeta cutpoints.",
+    "The response must be an ordered Categorical with categories in the right order; string labels would be sorted alphabetically.",
+]
+see_also = ["mnlogit", "glm-binomial", "smf-logit"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.miscmodels.ordinal_model.OrderedModel.html"
+
+[[entry]]
+id = "mnlogit"
+title = "Multinomial logistic regression (unordered categorical outcome)"
+kind = "fit"
+library = "statsmodels"
+import = "import statsmodels.formula.api as smf"
+call = "smf.mnlogit('choice ~ x1 + x2', data=df).fit()"
+aliases = ["multinomial logistic regression", "multinomial logit", "multiclass logistic regression with p-values", "softmax regression", "multinom", "baseline category logit", "polytomous logistic regression"]
+r = ["nnet::multinom", "multinom(choice ~ x1 + x2)"]
+inputs = "Formula; DataFrame; response as integer codes 0..K-1 (lowest code = reference category)."
+returns = "MultinomialResults: .params (one column per non-reference category), .bse, .pvalues, .predict() (K probability columns)."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+rng = np.random.default_rng(21)
+n = 600
+df = pd.DataFrame({"age": rng.normal(size=n), "income": rng.normal(size=n)})
+linear_pred = np.column_stack([np.zeros(n),
+                               0.5 + 1.0 * df["age"],
+                               -0.5 + 1.5 * df["income"]])
+probs = np.exp(linear_pred) / np.exp(linear_pred).sum(axis=1, keepdims=True)
+df["transport"] = [rng.choice(3, p=p) for p in probs]        # 0 = car (reference), 1 = bus, 2 = bike
+
+model = smf.mnlogit("transport ~ age + income", data=df).fit(disp=False)
+print(model.params.round(3))           # columns: category 1 vs 0, category 2 vs 0
+print(model.predict(df.head(2)).round(3))
+assert model.params.shape == (3, 2)
+'''
+caveats = [
+    "Reference category is the lowest code (like multinom's first factor level). Recode (e.g. pd.Categorical(...).codes) to change it.",
+    "Unpenalized maximum likelihood; sklearn LogisticRegression (multinomial) is L2-penalized by default and gives no SEs.",
+    "params columns are labelled by position (0, 1 = 2nd and 3rd categories); map back to your labels yourself.",
+]
+see_also = ["ordinal-logit", "smf-logit", "sk-logistic"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.discrete.discrete_model.MNLogit.html"
+
+[[entry]]
+id = "betareg"
+title = "Beta regression for proportions / rates strictly between 0 and 1"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.othermod.betareg import BetaModel"
+call = "BetaModel.from_formula('y ~ x', data=df).fit()"
+aliases = ["beta regression", "regression for proportions", "percentage outcome regression", "fractional response 0 1", "betareg", "rate between 0 and 1"]
+r = ["betareg::betareg", "betareg(y ~ x)"]
+inputs = "Formula; DataFrame with response strictly inside (0, 1); optional exog_precision for a precision sub-model (R: y ~ x | z)."
+returns = "BetaResults: .params (mean-model coefs on logit scale plus 'precision' on log scale), .bse, .summary(), .predict()."
+example = '''
+import numpy as np
+import pandas as pd
+from scipy.special import expit
+from statsmodels.othermod.betareg import BetaModel
+
+rng = np.random.default_rng(22)
+df = pd.DataFrame({"fertilizer": rng.normal(size=300)})
+mean_share = expit(0.3 + 0.8 * df["fertilizer"])
+phi = 20.0
+df["germination_rate"] = rng.beta(mean_share * phi, (1 - mean_share) * phi)
+
+model = BetaModel.from_formula("germination_rate ~ fertilizer", data=df).fit(disp=False)
+print(model.params.round(3).to_dict())
+print("phi (R's (phi)) =", round(np.exp(model.params["precision"]), 2))
+assert abs(model.params["fertilizer"] - 0.8) < 0.15
+'''
+caveats = [
+    "The precision parameter is reported on the LOG scale ('precision'); exp() it to compare with betareg's phi (betareg's default phi link is identity).",
+    "Exact 0 or 1 values are not allowed (same as betareg); squeeze with (y * (n - 1) + 0.5) / n first.",
+]
+see_also = ["glm-binomial", "negbin-glm"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.othermod.betareg.BetaModel.html"
+
+[[entry]]
+id = "glm-gam"
+title = "Generalized additive model (GAM) with penalized B-spline smooths"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.gam.api import BSplines, GLMGam"
+call = "GLMGam.from_formula('y ~ z', data=df, smoother=BSplines(df[['x']], df=[12], degree=[3]), alpha=[1.0]).fit()"
+aliases = ["gam", "generalized additive model", "mgcv", "smooth term", "s(x)", "penalized spline regression", "additive model", "nonlinear smooth effect"]
+r = ["mgcv::gam", "gam(y ~ z + s(x))"]
+inputs = "Formula for the linear (parametric) part; DataFrame; smoother=BSplines(columns to smooth, df=[basis size per column], degree=[3]); alpha= penalty weight per smooth; family= (Gaussian default)."
+returns = "GLMGamResults: .params (linear part then spline coefs), .edf (effective df per coefficient), .fittedvalues, .plot_partial(i)."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.gam.api import BSplines, GLMGam
+
+rng = np.random.default_rng(23)
+df = pd.DataFrame({"temperature": np.sort(rng.uniform(0, 10, 200))})
+df["yield_"] = np.sin(df["temperature"]) + rng.normal(scale=0.3, size=200)
+
+splines = BSplines(df[["temperature"]], df=[12], degree=[3])
+gam_model = GLMGam.from_formula("yield_ ~ 1", data=df, smoother=splines, alpha=np.array([1.0]))
+alpha_grid = [np.logspace(-2, 3, 11)]                 # one grid per smooth term
+best_alpha, _ = gam_model.select_penweight_kfold(alphas=alpha_grid, k_folds=5, rng=0)
+print("CV-chosen penalty weight:", best_alpha)
+gam_fit = GLMGam.from_formula("yield_ ~ 1", data=df, smoother=splines, alpha=np.atleast_1d(best_alpha)).fit()
+print("effective df:", round(gam_fit.edf.sum(), 2))
+fit_vs_truth = np.corrcoef(gam_fit.fittedvalues, np.sin(df["temperature"]))[0, 1]
+print("corr(fitted, true curve):", round(fit_vs_truth, 3))
+assert fit_vs_truth > 0.95
+'''
+caveats = [
+    "Smoothness is NOT chosen automatically: mgcv selects it by REML/GCV; here you must give alpha or search it (select_penweight_kfold). In statsmodels 0.15 GLMGam.select_penweight() (AIC) raises AttributeError, so use the k-fold version.",
+    "Smoothed columns are passed through smoother=, not written as s(x) in the formula. Basis size df=[k] plays the role of s(x, k = k).",
+    "predict on new data needs both parts: fit.predict(exog=new_df, exog_smooth=new_df[['x']]); fit.predict(df) alone fails with a shape error.",
+    "For a simple unpenalized spline in a linear model, bs(x, df=5) inside smf.ols is often enough (see patsy-bs).",
+]
+see_also = ["patsy-bs", "smoothing-spline", "spline-transformer"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.gam.generalized_additive_model.GLMGam.html"
+
+[[entry]]
+id = "het-breuschpagan"
+title = "Breusch-Pagan test for heteroscedasticity of regression residuals"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.diagnostic import het_breuschpagan"
+call = "lm_stat, lm_pvalue, f_stat, f_pvalue = het_breuschpagan(model.resid, model.model.exog)"
+aliases = ["breusch pagan test", "heteroscedasticity test", "heteroskedasticity test", "test constant variance", "bptest", "non constant variance test", "white test"]
+r = ["lmtest::bptest", "car::ncvTest"]
+inputs = "Residuals of a fitted OLS; exog matrix (with constant) of variables suspected to drive the variance."
+returns = "Tuple (LM statistic, LM p-value, F statistic, F p-value)."
+example = '''
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+rng = np.random.default_rng(24)
+x = rng.uniform(0, 5, 200)
+y = 1 + 0.8 * x + rng.normal(scale=0.2 + 0.6 * x)
+df = pd.DataFrame({"x": x, "y": y})
+model = smf.ols("y ~ x", data=df).fit()
+
+lm_stat, lm_pvalue, f_stat, f_pvalue = het_breuschpagan(model.resid, model.model.exog)
+print(f"BP = {lm_stat:.2f}, p = {lm_pvalue:.2e}")
+assert lm_pvalue < 0.01
+'''
+caveats = [
+    "Default robust=True is Koenker's studentized version, which matches bptest's default (studentize = TRUE). car::ncvTest is the original non-studentized test (robust=False).",
+    "The exog you pass must include a constant column; model.model.exog already does.",
+    "White's test (squares and cross products): het_white(model.resid, model.model.exog).",
+]
+see_also = ["ols-robust-se", "wls", "ols-diagnostics"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.het_breuschpagan.html"

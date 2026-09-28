@@ -1,0 +1,238 @@
+# Topic: boosting -- gradient-boosted trees with XGBoost and LightGBM (scikit-learn style API).
+# Key distinction: n_estimators is a MAXIMUM; early stopping on a VALIDATION set picks the number of trees.
+# Add-on: uv sync --extra ml   (no add-on needed for sklearn's HistGradientBoosting: see hist-gradient-boosting)
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "xgboost-early-stopping"
+title = "XGBoost classifier or regressor with early stopping on a validation set"
+kind = "fit"
+library = "XGBoost"
+import = "from xgboost import XGBClassifier, XGBRegressor"
+call = "XGBClassifier(n_estimators=1000, learning_rate=0.1, max_depth=3, early_stopping_rounds=20, eval_metric='logloss').fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)"
+aliases = ["xgboost", "xgb", "xgbclassifier", "xgbregressor", "extreme gradient boosting", "xgboost early stopping", "early stopping", "boosted trees xgboost", "best iteration"]
+r = ["xgboost", "xgboost::xgboost", "xgboost::xgb.train", "xgboost::xgb.cv"]
+inputs = "X (array or DataFrame), y (0..k-1 labels or numeric); a held-out validation set for eval_set."
+returns = "Fitted estimator: .predict, .predict_proba, .best_iteration, .best_score, .evals_result(), .feature_importances_."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+from xgboost import XGBClassifier
+
+X, y = make_classification(n_samples=2000, n_features=10, n_informative=5, random_state=0)
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=0)
+
+model = XGBClassifier(
+    n_estimators=1000,           # upper limit; early stopping picks the number
+    learning_rate=0.1,           # R: eta
+    max_depth=3,
+    early_stopping_rounds=20,    # constructor argument in xgboost >= 2 (not .fit)
+    eval_metric="logloss",
+    random_state=0,
+    n_jobs=1,                    # single thread: deterministic and fast on small data
+)
+model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+auc = roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])   # uses the best iteration
+print("best iteration:", model.best_iteration, " val logloss:", round(model.best_score, 4))
+print("validation AUC:", round(auc, 3))
+print("logloss curve (first 3):", np.round(model.evals_result()["validation_0"]["logloss"][:3], 4))
+assert model.best_iteration < 999 and auc > 0.9
+'''
+caveats = [
+    "xgboost >= 2 takes early_stopping_rounds and eval_metric in the CONSTRUCTOR; passing them to .fit() raises a TypeError in xgboost 3.",
+    "The validation set used for early stopping is no longer an honest test set: keep a separate test split (or use cross-validation) for the final score.",
+    "Labels must be 0..k-1 integers (not strings or 1/2 like some R code); use LabelEncoder or pd.factorize.",
+    "Defaults differ from R's xgboost(): n_estimators=100 trees, learning_rate 0.3, max_depth 6, tree_method='hist'.",
+    "XGBRegressor has the same API with eval_metric='rmse'.",
+]
+see_also = ["lightgbm-early-stopping", "hist-gradient-boosting", "boosting-feature-importance", "boosting-categorical", "random-forest", "train-test-split"]
+docs = "https://xgboost.readthedocs.io/en/stable/python/sklearn_estimator.html"
+requires = ["xgboost"]
+extra = "ml"
+
+[[entry]]
+id = "lightgbm-early-stopping"
+title = "LightGBM classifier or regressor with early stopping callback"
+kind = "fit"
+library = "LightGBM"
+import = "import lightgbm as lgb"
+call = "lgb.LGBMRegressor(n_estimators=1000, learning_rate=0.05, num_leaves=15, verbose=-1).fit(X_train, y_train, eval_X=X_val, eval_y=y_val, callbacks=[lgb.early_stopping(20, verbose=False)])"
+aliases = ["lightgbm", "lgbm", "lgb.train", "lgbmclassifier", "lgbmregressor", "light gbm", "lightgbm early stopping", "leaf-wise boosting"]
+r = ["lightgbm", "lightgbm::lightgbm", "lightgbm::lgb.train", "lightgbm::lgb.cv"]
+inputs = "X (array or DataFrame), y; validation data via eval_X / eval_y; callbacks list."
+returns = "Fitted estimator: .predict, .predict_proba, .best_iteration_, .best_score_, .booster_, .feature_importances_."
+example = '''
+import numpy as np
+import lightgbm as lgb
+from sklearn.datasets import make_friedman1
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+X, y = make_friedman1(n_samples=2000, noise=1.0, random_state=0)
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=0)
+
+model = lgb.LGBMRegressor(
+    n_estimators=1000, learning_rate=0.05, num_leaves=15,
+    random_state=0, n_jobs=1, verbose=-1,   # verbose=-1 silences the C++ log
+)
+model.fit(X_train, y_train, eval_X=X_val, eval_y=y_val,
+          callbacks=[lgb.early_stopping(stopping_rounds=20, verbose=False)])
+rmse = mean_squared_error(y_val, model.predict(X_val)) ** 0.5   # predict uses best_iteration_
+print("best iteration:", model.best_iteration_, " val RMSE:", round(rmse, 3))
+print("best_score_:", dict(model.best_score_["valid_0"]))
+assert model.best_iteration_ < 1000 and rmse < 2.0
+'''
+caveats = [
+    "LightGBM 4.7 deprecates fit(eval_set=[(X_val, y_val)]) in favour of eval_X= / eval_y= (a FutureWarning); early stopping is a CALLBACK, lgb.early_stopping(n), not a constructor argument (unlike xgboost).",
+    "Trees grow leaf-wise: num_leaves (default 31) controls complexity more than max_depth (default -1 = unlimited); small data overfit easily, raise min_child_samples.",
+    "Pass verbose=-1 in the constructor to silence '[LightGBM] [Warning] ...' messages.",
+    "LGBMClassifier has the same API; predict_proba gives class probabilities.",
+]
+see_also = ["xgboost-early-stopping", "hist-gradient-boosting", "boosting-feature-importance", "boosting-categorical"]
+docs = "https://lightgbm.readthedocs.io/en/stable/pythonapi/lightgbm.LGBMRegressor.html"
+requires = ["lightgbm"]
+extra = "ml"
+
+[[entry]]
+id = "boosting-feature-importance"
+title = "Feature importance from boosted trees: gain vs split (weight) counts"
+kind = "evaluate"
+library = "XGBoost / LightGBM"
+import = "from xgboost import XGBClassifier\nimport lightgbm as lgb"
+call = "xgb_model.get_booster().get_score(importance_type='gain') ; lgb_model.booster_.feature_importance(importance_type='gain')"
+aliases = ["feature importance", "variable importance boosting", "xgboost feature importance", "lightgbm feature importance", "gain importance", "split importance", "importance_type"]
+r = ["xgboost::xgb.importance", "lightgbm::lgb.importance", "gbm::summary.gbm", "vip::vip"]
+inputs = "A fitted XGBoost or LightGBM model."
+returns = "Per-feature scores; .feature_importances_ (normalized for xgboost) or a dict / array from the booster."
+example = '''
+import numpy as np
+import lightgbm as lgb
+from xgboost import XGBClassifier
+
+rng = np.random.default_rng(0)
+n = 2000
+X = np.column_stack([
+    rng.normal(size=n),                  # x0: strong signal
+    rng.integers(0, 2, size=n),          # x1: weak binary signal
+    rng.normal(size=n),                  # x2: pure noise, continuous
+])
+y = (2.0 * X[:, 0] + 0.5 * X[:, 1] + rng.normal(size=n) > 0).astype(int)
+
+xgb_model = XGBClassifier(n_estimators=100, max_depth=3, random_state=0, n_jobs=1).fit(X, y)
+lgb_model = lgb.LGBMClassifier(n_estimators=100, random_state=0, verbose=-1, n_jobs=1).fit(X, y)
+
+booster = xgb_model.get_booster()
+print("xgb gain  :", booster.get_score(importance_type="gain"))
+print("xgb weight:", booster.get_score(importance_type="weight"))    # number of splits
+print("lgb split (default):", lgb_model.feature_importances_)
+print("lgb gain           :", lgb_model.booster_.feature_importance(importance_type="gain").round(1))
+
+gain = lgb_model.booster_.feature_importance(importance_type="gain")
+split = lgb_model.feature_importances_
+# Noise feature x2 gets many splits but little gain
+print("share of splits on noise:", round(split[2] / split.sum(), 2), " share of gain:", round(gain[2] / gain.sum(), 2))
+assert gain[2] / gain.sum() < split[2] / split.sum()
+'''
+caveats = [
+    "Defaults DIFFER: XGBClassifier.feature_importances_ uses 'gain' (normalized to sum 1); LGBMClassifier.feature_importances_ uses 'split' counts unless importance_type='gain' is passed to the constructor.",
+    "Split counts favour continuous and high-cardinality features (many possible thresholds), even pure noise; prefer gain, or better permutation importance on held-out data.",
+    "Importances say nothing about direction of effect; use partial dependence or SHAP values (model.predict(..., pred_contrib=True) in xgboost/lightgbm).",
+    "xgboost's get_score omits features never used in a split.",
+]
+see_also = ["permutation-importance", "partial-dependence", "xgboost-early-stopping", "lightgbm-early-stopping", "random-forest"]
+docs = "https://xgboost.readthedocs.io/en/stable/python/python_api.html#xgboost.Booster.get_score"
+requires = ["xgboost", "lightgbm"]
+extra = "ml"
+
+[[entry]]
+id = "boosting-categorical"
+title = "Native categorical features in XGBoost and LightGBM (no one-hot encoding)"
+kind = "fit"
+library = "XGBoost / LightGBM"
+import = "import pandas as pd\nfrom xgboost import XGBRegressor\nimport lightgbm as lgb"
+call = "XGBRegressor(enable_categorical=True, tree_method='hist').fit(df, y) ; lgb.LGBMRegressor(verbose=-1).fit(df, y)  # df columns with dtype 'category'"
+aliases = ["categorical features boosting", "enable_categorical", "categorical_feature", "factor predictors xgboost", "native categorical support", "xgboost categorical", "lightgbm categorical", "no one hot encoding"]
+r = ["lightgbm::lgb.Dataset(categorical_feature = )", "xgboost::xgb.DMatrix"]
+inputs = "pandas DataFrame whose categorical columns have dtype 'category' (like R factors)."
+returns = "Fitted model that splits on groups of categories directly."
+example = '''
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+from xgboost import XGBRegressor
+
+rng = np.random.default_rng(0)
+n = 1500
+df = pd.DataFrame({
+    "x": rng.normal(size=n),
+    "site": pd.Categorical(rng.choice(["a", "b", "c", "d", "e"], size=n)),   # like an R factor
+})
+effect = {"a": 0.0, "b": 2.0, "c": -2.0, "d": 1.0, "e": 0.0}
+y = df["x"] + df["site"].map(effect).astype(float) + rng.normal(scale=0.3, size=n)
+
+xgb_model = XGBRegressor(n_estimators=200, max_depth=3, enable_categorical=True,
+                         tree_method="hist", random_state=0, n_jobs=1).fit(df, y)
+lgb_model = lgb.LGBMRegressor(n_estimators=200, random_state=0, verbose=-1, n_jobs=1).fit(df, y)   # 'category' dtype detected
+
+new = pd.DataFrame({"x": [0.0, 0.0],
+                    "site": pd.Categorical(["b", "c"], categories=df["site"].cat.categories)})
+print("xgb:", xgb_model.predict(new).round(2), " lgb:", lgb_model.predict(new).round(2))
+assert np.allclose(xgb_model.predict(new), [2.0, -2.0], atol=0.4)
+assert np.allclose(lgb_model.predict(new), [2.0, -2.0], atol=0.4)
+'''
+caveats = [
+    "Columns must have pandas dtype 'category' (df[col].astype('category')); object/string columns raise an error in xgboost.",
+    "New data must use the SAME categories in the same order as training (pd.Categorical(..., categories=train_categories)); otherwise codes silently mismatch.",
+    "XGBoost needs enable_categorical=True; LightGBM uses 'category' columns automatically (categorical_feature='auto') or an explicit list of names.",
+    "scikit-learn's HistGradientBoosting* supports this too with categorical_features='from_dtype'.",
+]
+see_also = ["df-categorical", "column-transformer", "xgboost-early-stopping", "lightgbm-early-stopping", "hist-gradient-boosting"]
+docs = "https://xgboost.readthedocs.io/en/stable/tutorials/categorical.html"
+requires = ["xgboost", "lightgbm"]
+extra = "ml"
+
+[[entry]]
+id = "boosting-compare-libraries"
+title = "Compare XGBoost, LightGBM and scikit-learn HistGradientBoosting on the same data"
+kind = "evaluate"
+library = "XGBoost / LightGBM / scikit-learn"
+import = "from xgboost import XGBClassifier\nfrom lightgbm import LGBMClassifier\nfrom sklearn.ensemble import HistGradientBoostingClassifier\nfrom sklearn.model_selection import cross_val_score"
+call = "cross_val_score(model, X, y, cv=5, scoring='roc_auc') for each of XGBClassifier(), LGBMClassifier(verbose=-1), HistGradientBoostingClassifier()"
+aliases = ["xgboost vs lightgbm", "compare boosting libraries", "which gradient boosting library", "xgboost lightgbm sklearn comparison", "boosting benchmark"]
+r = ["caret::train(method = 'xgbTree')", "tidymodels::boost_tree"]
+inputs = "X, y; the same CV folds and metric for every model."
+returns = "Cross-validated scores per library."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from threadpoolctl import threadpool_limits
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+
+X, y = make_classification(n_samples=1500, n_features=12, n_informative=6, random_state=1)
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)     # same folds for all
+models = {
+    "xgboost": XGBClassifier(n_estimators=200, learning_rate=0.1, max_depth=4, random_state=0, n_jobs=1),
+    "lightgbm": LGBMClassifier(n_estimators=200, learning_rate=0.1, num_leaves=15, random_state=0, verbose=-1, n_jobs=1),
+    "sklearn HGB": HistGradientBoostingClassifier(max_iter=200, learning_rate=0.1, max_leaf_nodes=15, random_state=0),
+}
+with threadpool_limits(limits=1, user_api="openmp"):     # one OpenMP thread each: reproducible timing
+    scores = {name: cross_val_score(m, X, y, cv=cv, scoring="roc_auc") for name, m in models.items()}
+for name, s in scores.items():
+    print(f"{name:12s} AUC {s.mean():.3f} +/- {s.std():.3f}")
+assert all(s.mean() > 0.9 for s in scores.values())
+'''
+caveats = [
+    "With comparable settings the three usually score within noise of each other; tuning (learning rate, depth/leaves, number of trees) matters more than the library.",
+    "HistGradientBoosting needs no add-on, handles missing values natively and early-stops automatically when n_samples > 10000 (early_stopping='auto').",
+    "All three use OpenMP threads; on a busy or shared machine too many threads can make fitting crawl. n_jobs=1 (xgboost/lightgbm) or threadpoolctl.threadpool_limits(1) (all three, including HGB) fixes it.",
+    "Default hyperparameters differ (xgboost max_depth=6 depth-wise; LightGBM num_leaves=31 leaf-wise; HGB max_leaf_nodes=31, max_iter=100), so untuned defaults are not a fair comparison.",
+]
+see_also = ["hist-gradient-boosting", "xgboost-early-stopping", "lightgbm-early-stopping", "cross-val-score", "grid-search-cv"]
+docs = "https://scikit-learn.org/stable/modules/ensemble.html#histogram-based-gradient-boosting"
+requires = ["xgboost", "lightgbm"]
+extra = "ml"

@@ -1,0 +1,577 @@
+# Topic: hypothesis_tests -- nonparametric, ANOVA, contingency, correlation, resampling and power (SciPy, statsmodels).
+# Key distinction: the test is fit to data (kind = fit); check each default (continuity correction, exact vs asymptotic, p-adjust method) against R's before comparing p-values.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "mann-whitney"
+title = "Mann-Whitney U / Wilcoxon rank-sum test (two independent samples)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.mannwhitneyu(x, y, alternative='two-sided', method='auto')"
+aliases = ["wilcoxon rank sum", "wilcoxon rank-sum test", "mann whitney", "u test", "mann-whitney u", "nonparametric two sample test", "compare two medians", "rank sum test", "nonparametric t test alternative"]
+r = ["wilcox.test", "wilcox.test(x, y)"]
+inputs = "Two 1-D arrays of independent observations (ordinal or continuous)."
+returns = "Result with .statistic (U for the FIRST sample, equals R's W) and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(21)
+pain_drug = rng.normal(3.0, 1.2, 18).round(1)
+pain_placebo = rng.normal(4.2, 1.2, 20).round(1)
+
+result = stats.mannwhitneyu(pain_drug, pain_placebo, alternative="two-sided")
+print("U =", result.statistic, " p =", round(result.pvalue, 4))
+
+# U(x) + U(y) = n_x * n_y
+u_other = stats.mannwhitneyu(pain_placebo, pain_drug).statistic
+assert result.statistic + u_other == len(pain_drug) * len(pain_placebo)
+'''
+caveats = [
+    "The statistic is U for the first sample, the same number R prints as W.",
+    "Exact vs asymptotic differs from R: SciPy's method='auto' is exact only when one sample has <= 8 values and there are no ties; R's wilcox.test is exact for n < 50 without ties. Pass method='exact' (no ties) to reproduce R's p-value.",
+    "Continuity correction: use_continuity=True by default, like R's correct = TRUE.",
+    "alternative uses 'two-sided' / 'less' / 'greater' (R: 'two.sided'). SciPy gives no Hodges-Lehmann shift estimate or CI (R's conf.int = TRUE).",
+    "For PAIRED data use wilcoxon-signed-rank instead.",
+]
+see_also = ["wilcoxon-signed-rank", "kruskal-wallis", "ttest", "permutation-test"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.mannwhitneyu.html"
+
+[[entry]]
+id = "wilcoxon-signed-rank"
+title = "Wilcoxon signed-rank test (paired samples or one sample vs 0)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.wilcoxon(after, before, alternative='two-sided')"
+aliases = ["signed rank test", "paired wilcoxon", "wilcoxon paired", "nonparametric paired test", "paired nonparametric", "before after nonparametric", "paired t test alternative"]
+r = ["wilcox.test(x, y, paired = TRUE)", "wilcox.test(paired = TRUE)"]
+inputs = "Two paired arrays of equal length, or one array of differences."
+returns = "Result with .statistic (smaller of the signed-rank sums for two-sided) and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(22)
+before = rng.normal(140, 12, 15).round()
+after = before - rng.normal(6, 8, 15).round()
+
+result = stats.wilcoxon(after, before, alternative="two-sided")
+print("T =", result.statistic, " p =", round(result.pvalue, 4))
+
+# Same test on the differences directly
+assert np.isclose(stats.wilcoxon(after - before).pvalue, result.pvalue)
+'''
+caveats = [
+    "Statistic differs from R: for two-sided SciPy reports min(V+, V-); R reports V = sum of positive ranks. p-values agree.",
+    "correction=False by default in SciPy; R uses correct = TRUE when it falls back to the normal approximation.",
+    "method='auto' is exact for n <= 50 without ties/zeros (like R). With ties or zeros SciPy permutes when n <= 13, else normal approximation.",
+    "Zero differences are dropped (zero_method='wilcox'), the same as R.",
+]
+see_also = ["mann-whitney", "ttest", "permutation-test"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wilcoxon.html"
+
+[[entry]]
+id = "kruskal-wallis"
+title = "Kruskal-Wallis rank test (3+ independent groups)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.kruskal(group_a, group_b, group_c)"
+aliases = ["kruskal wallis", "nonparametric anova", "rank anova", "h test", "compare medians several groups", "nonparametric one way anova"]
+r = ["kruskal.test"]
+inputs = "Two or more 1-D arrays, one per group (unpacked, not a long data frame)."
+returns = "Result with .statistic (H, tie-corrected) and .pvalue (chi-square approximation)."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(23)
+scores = {name: rng.normal(loc, 1, 12).round(1) for name, loc in [("A", 0), ("B", 0.8), ("C", 1.5)]}
+result = stats.kruskal(*scores.values())
+print("H =", round(result.statistic, 3), " p =", round(result.pvalue, 4))
+assert 0 <= result.pvalue <= 1
+'''
+caveats = [
+    "Pass groups as separate arrays. From a long data frame: stats.kruskal(*[g['y'] for _, g in df.groupby('group')]).",
+    "Uses the chi-square approximation with tie correction, like R. No built-in post hoc Dunn test (R dunn.test / FSA::dunnTest); use pairwise mann-whitney + multipletests.",
+]
+see_also = ["mann-whitney", "f-oneway", "multipletests"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.kruskal.html"
+
+[[entry]]
+id = "f-oneway"
+title = "One-way ANOVA F test (compare means of 3+ groups)"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.f_oneway(group_a, group_b, group_c)"
+aliases = ["one way anova", "anova f test", "compare several means", "analysis of variance", "welch anova"]
+r = ["aov", "oneway.test", "anova(lm(y ~ group))"]
+inputs = "Two or more 1-D arrays, one per group."
+returns = "Result with .statistic (F) and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(24)
+groups = [rng.normal(mu, 2.0, 15) for mu in (10, 11, 13)]
+result = stats.f_oneway(*groups)
+print("F =", round(result.statistic, 3), " p =", round(result.pvalue, 5))
+
+# Hand computation of F = MS_between / MS_within
+all_values = np.concatenate(groups)
+k, n = len(groups), all_values.size
+ss_between = sum(g.size * (g.mean() - all_values.mean()) ** 2 for g in groups)
+ss_within = sum(((g - g.mean()) ** 2).sum() for g in groups)
+assert np.isclose(result.statistic, (ss_between / (k - 1)) / (ss_within / (n - k)))
+
+print("Welch:", stats.f_oneway(*groups, equal_var=False).pvalue)   # oneway.test default
+'''
+caveats = [
+    "Default equal_var=True matches aov / oneway.test(var.equal = TRUE). R's oneway.test defaults to Welch (var.equal = FALSE): use equal_var=False.",
+    "For a formula interface with covariates or factorial designs use statsmodels ols + anova_lm (see anova-lm).",
+]
+see_also = ["tukey-hsd", "kruskal-wallis", "anova-lm", "equal-variance-tests"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.f_oneway.html"
+
+[[entry]]
+id = "tukey-hsd"
+title = "Tukey HSD post hoc pairwise comparisons after ANOVA"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.stats.multicomp import pairwise_tukeyhsd"
+call = "pairwise_tukeyhsd(endog=values, groups=labels, alpha=0.05)"
+aliases = ["tukey honest significant difference", "tukey post hoc", "post hoc test anova", "pairwise comparisons anova", "multiple comparisons of means"]
+r = ["TukeyHSD", "TukeyHSD(aov(y ~ group))"]
+inputs = "Long format: one array of values and one array of group labels."
+returns = "TukeyHSDResults: .summary() table (meandiff, p-adj, lower, upper, reject), .pvalues, .confint."
+example = '''
+import numpy as np
+from scipy import stats
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+
+rng = np.random.default_rng(25)
+labels = np.repeat(["ctrl", "low", "high"], 15)
+values = np.concatenate([rng.normal(mu, 2.0, 15) for mu in (10, 11, 13)])
+
+tukey = pairwise_tukeyhsd(endog=values, groups=labels, alpha=0.05)
+print(tukey.summary())
+
+# SciPy alternative (wide format, groups in the order given)
+scipy_result = stats.tukey_hsd(values[labels == "ctrl"], values[labels == "high"], values[labels == "low"])
+assert np.allclose(np.sort(tukey.pvalues), np.sort(scipy_result.pvalue[np.triu_indices(3, 1)]), atol=1e-3)
+'''
+caveats = [
+    "Group order in the statsmodels table is alphabetical; meandiff is group2 - group1 (R's TukeyHSD prints the same direction, e.g. 'high-ctrl').",
+    "scipy.stats.tukey_hsd(*groups) is the wide-format alternative; its .pvalue is a k x k matrix and .confidence_interval() gives the intervals.",
+    "Both assume equal variances. For unequal variances use Games-Howell (pingouin.pairwise_gameshowell, optional).",
+]
+see_also = ["f-oneway", "multipletests"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.multicomp.pairwise_tukeyhsd.html"
+
+[[entry]]
+id = "chi2-contingency"
+title = "Chi-square test of independence for a contingency table"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.chi2_contingency(table, correction=True)"
+aliases = ["chi square test", "chi-squared test", "chi square independence", "contingency table test", "pearson chi square", "crosstab test", "association between categorical variables", "yates correction"]
+r = ["chisq.test"]
+inputs = "2-D array of observed COUNTS (e.g. pd.crosstab(df.a, df.b).to_numpy())."
+returns = "Result with .statistic, .pvalue, .dof, .expected_freq."
+example = '''
+import numpy as np
+from scipy import stats
+
+# rows: exposed / unexposed; columns: disease yes / no
+table = np.array([[30, 70],
+                  [18, 82]])
+result = stats.chi2_contingency(table)                    # Yates-corrected, like chisq.test
+uncorrected = stats.chi2_contingency(table, correction=False)
+print("X2 (Yates) =", round(result.statistic, 3), " p =", round(result.pvalue, 4))
+print("X2 (no correction) =", round(uncorrected.statistic, 3))
+print(result.expected_freq)
+
+expected = np.outer(table.sum(1), table.sum(0)) / table.sum()
+assert np.isclose(uncorrected.statistic, ((table - expected) ** 2 / expected).sum())
+'''
+caveats = [
+    "correction=True (Yates) is applied ONLY when dof = 1 (2x2 tables), the same as R's chisq.test(correct = TRUE). Larger tables are never corrected.",
+    "Input is a table of counts, not two raw vectors. Build one with pd.crosstab.",
+    "SciPy does not warn when expected counts are < 5 (R does). Check .expected_freq; use fisher-exact for small counts.",
+    "Goodness of fit to given probabilities (chisq.test(x, p = ...)) is stats.chisquare(observed, f_exp).",
+]
+see_also = ["fisher-exact", "proportions-ztest", "mcnemar"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.chi2_contingency.html"
+
+[[entry]]
+id = "fisher-exact"
+title = "Fisher's exact test for a 2x2 (or r x c) table"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats\nfrom scipy.stats.contingency import odds_ratio"
+call = "stats.fisher_exact(table, alternative='two-sided')"
+aliases = ["fisher exact test", "fishers exact", "exact test 2x2", "small counts contingency", "odds ratio exact test"]
+r = ["fisher.test"]
+inputs = "2-D array of counts."
+returns = "Result with .statistic (sample odds ratio for 2x2) and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+from scipy.stats.contingency import odds_ratio
+
+table = np.array([[8, 2],
+                  [3, 9]])
+result = stats.fisher_exact(table, alternative="two-sided")
+print("sample OR =", round(result.statistic, 3), " p =", round(result.pvalue, 4))
+
+# R's fisher.test reports the CONDITIONAL MLE odds ratio and its exact CI
+conditional = odds_ratio(table, kind="conditional")
+print("conditional OR =", round(conditional.statistic, 3), conditional.confidence_interval(0.95))
+assert np.isclose(result.statistic, (8 * 9) / (2 * 3))
+'''
+caveats = [
+    "The .statistic is the sample odds ratio ad/bc; R's fisher.test prints the conditional MLE. Use scipy.stats.contingency.odds_ratio(table, kind='conditional') for R's estimate and CI. p-values agree.",
+    "Tables larger than 2x2 are supported (R x C); the alternative argument then has no effect.",
+]
+see_also = ["chi2-contingency", "mcnemar"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.fisher_exact.html"
+
+[[entry]]
+id = "correlation-test"
+title = "Correlation test with p-value: Pearson, Spearman, Kendall"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.pearsonr(x, y) / stats.spearmanr(x, y) / stats.kendalltau(x, y)"
+aliases = ["pearson correlation test", "spearman rank correlation", "kendall tau", "correlation p value", "correlation confidence interval", "test correlation significance", "rank correlation"]
+r = ["cor.test", "cor.test(method = 'spearman')", "cor.test(method = 'kendall')"]
+inputs = "Two equal-length 1-D arrays."
+returns = "Result with .statistic (r, rho or tau) and .pvalue; pearsonr also has .confidence_interval()."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(26)
+tumor_size = rng.normal(30, 8, 40)
+suv_max = 0.2 * tumor_size + rng.normal(0, 2, 40)
+
+pearson = stats.pearsonr(tumor_size, suv_max)
+print("r =", round(pearson.statistic, 3), " p =", pearson.pvalue)
+print("95% CI:", pearson.confidence_interval(confidence_level=0.95))   # Fisher z, like R
+print("rho =", round(stats.spearmanr(tumor_size, suv_max).statistic, 3))
+print("tau-b =", round(stats.kendalltau(tumor_size, suv_max).statistic, 3))
+assert np.isclose(pearson.statistic, np.corrcoef(tumor_size, suv_max)[0, 1])
+'''
+caveats = [
+    "Pearson CI uses the Fisher z transform, matching cor.test.",
+    "spearmanr p-value uses a t approximation; R's cor.test(method = 'spearman') uses an exact algorithm for n < 1290 without ties, so small-sample p-values differ.",
+    "kendalltau computes tau-b (tie-adjusted) by default; method='auto' is exact for small samples without ties, as in R.",
+    "No CI for Spearman/Kendall: use scipy.stats.bootstrap (see bootstrap-ci).",
+]
+see_also = ["bootstrap-ci", "lin-ccc"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html"
+
+[[entry]]
+id = "normality-tests"
+title = "Normality tests: Shapiro-Wilk and D'Agostino-Pearson"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.shapiro(x) / stats.normaltest(x)"
+aliases = ["shapiro wilk", "shapiro test", "test for normality", "is my data normal", "normality check", "dagostino pearson", "omnibus normality test", "lilliefors"]
+r = ["shapiro.test", "nortest::lillie.test", "fBasics::dagoTest"]
+inputs = "One 1-D array."
+returns = "Result with .statistic and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(27)
+normal_sample = rng.normal(50, 10, 60)
+skewed_sample = rng.lognormal(3, 0.8, 60)
+
+for name, sample in [("normal", normal_sample), ("skewed", skewed_sample)]:
+    sw = stats.shapiro(sample)
+    dp = stats.normaltest(sample)
+    print(f"{name}: Shapiro W = {sw.statistic:.3f}, p = {sw.pvalue:.4f};  D'Agostino p = {dp.pvalue:.4f}")
+assert stats.shapiro(skewed_sample).pvalue < 0.05
+'''
+caveats = [
+    "shapiro uses the same Royston algorithm as R's shapiro.test; results match.",
+    "normaltest (skewness + kurtosis) needs n >= 8 and is unreliable below ~20.",
+    "Do NOT use stats.kstest(x, 'norm') with mean/sd estimated from x; that is Lilliefors: statsmodels.stats.diagnostic.lilliefors(x).",
+    "With large n tiny departures become 'significant'; look at a Q-Q plot (see qqplot).",
+]
+see_also = ["qqplot", "ks-test", "equal-variance-tests"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.shapiro.html"
+
+[[entry]]
+id = "equal-variance-tests"
+title = "Equal-variance tests: Levene (Brown-Forsythe) and Bartlett"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.levene(a, b, c, center='median') / stats.bartlett(a, b, c)"
+aliases = ["levene test", "bartlett test", "homogeneity of variance", "homoscedasticity test", "equal variances", "brown forsythe", "test equal variance"]
+r = ["car::leveneTest", "bartlett.test", "var.test"]
+inputs = "Two or more 1-D arrays, one per group."
+returns = "Result with .statistic and .pvalue."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(28)
+narrow, wide = rng.normal(0, 1, 30), rng.normal(0, 2.5, 30)
+levene = stats.levene(narrow, wide, center="median")     # car::leveneTest default
+bartlett = stats.bartlett(narrow, wide)
+print("Levene/Brown-Forsythe p =", round(levene.pvalue, 5))
+print("Bartlett p =", round(bartlett.pvalue, 5))
+assert levene.pvalue < 0.05
+'''
+caveats = [
+    "levene's default center='median' is the Brown-Forsythe variant, which is also car::leveneTest's default. center='mean' gives the classic Levene test.",
+    "Bartlett is sensitive to non-normality; prefer Levene for skewed data.",
+    "R's var.test (F test of two variances) has no one-line SciPy function; compute F = var(a, ddof=1)/var(b, ddof=1) with stats.f.sf.",
+]
+see_also = ["f-oneway", "normality-tests", "ttest"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.levene.html"
+
+[[entry]]
+id = "ks-test"
+title = "Kolmogorov-Smirnov test: two samples or sample vs a distribution"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.ks_2samp(x, y) / stats.kstest(x, stats.norm(loc=mu, scale=sigma).cdf)"
+aliases = ["kolmogorov smirnov", "ks test", "compare two distributions", "same distribution test", "goodness of fit continuous distribution", "ecdf distance test"]
+r = ["ks.test"]
+inputs = "Two arrays (ks_2samp), or an array plus a distribution name/cdf with FULLY specified parameters (kstest)."
+returns = "Result with .statistic (D), .pvalue, .statistic_location, .statistic_sign."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(29)
+scanner_a = rng.normal(0, 1, 80)
+scanner_b = rng.normal(0.3, 1.4, 70)
+
+two_sample = stats.ks_2samp(scanner_a, scanner_b)
+print("D =", round(two_sample.statistic, 3), " p =", round(two_sample.pvalue, 4))
+
+vs_standard_normal = stats.kstest(scanner_a, stats.norm(loc=0, scale=1).cdf)   # parameters given, not estimated
+print("vs N(0,1): p =", round(vs_standard_normal.pvalue, 4))
+assert 0 < two_sample.statistic <= 1
+'''
+caveats = [
+    "kstest against a distribution requires KNOWN parameters. Plugging in the sample mean/sd makes p too large; use statsmodels.stats.diagnostic.lilliefors instead.",
+    "Pass a frozen distribution's .cdf (stats.norm(loc=0, scale=1).cdf). In SciPy 1.18 the string form kstest(x, 'norm', args=(0, 1)) raises TypeError; kstest(x, 'norm') works only for the standard normal.",
+    "ks_2samp method='auto' is exact for small samples, like R's ks.test(exact = NULL).",
+    "alternative 'less'/'greater' refer to the CDFs, the same convention as R.",
+]
+see_also = ["normality-tests", "mann-whitney"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.ks_2samp.html"
+
+[[entry]]
+id = "binomtest"
+title = "Exact binomial test and Clopper-Pearson CI for one proportion"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.binomtest(k, n, p=0.5, alternative='two-sided')"
+aliases = ["binomial test", "exact binomial test", "one proportion test", "test a proportion", "clopper pearson", "exact proportion confidence interval"]
+r = ["binom.test"]
+inputs = "k successes, n trials, hypothesised proportion p."
+returns = "BinomTestResult: .statistic (k/n), .pvalue, .proportion_ci(confidence_level, method)."
+example = '''
+from scipy import stats
+
+responders, patients = 14, 40
+result = stats.binomtest(responders, patients, p=0.2, alternative="two-sided")
+ci = result.proportion_ci(confidence_level=0.95, method="exact")   # Clopper-Pearson, as binom.test
+print("p-hat =", result.statistic, " p =", round(result.pvalue, 4))
+print("95% CI:", round(ci.low, 4), round(ci.high, 4))
+assert result.statistic == responders / patients
+'''
+caveats = [
+    "proportion_ci(method='exact') is Clopper-Pearson, matching binom.test. method='wilson' gives the Wilson score interval.",
+    "Two-sided p-value uses the same 'probabilities no larger than observed' rule as R.",
+]
+see_also = ["proportions-ztest", "binom-dist", "diagnostic-accuracy-ci"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.binomtest.html"
+
+[[entry]]
+id = "proportions-ztest"
+title = "z-test for one or two proportions"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.stats.proportion import proportions_ztest"
+call = "proportions_ztest(count=[x1, x2], nobs=[n1, n2])"
+aliases = ["two proportion z test", "compare two proportions", "difference in proportions test", "proportion test", "prop test", "rates comparison"]
+r = ["prop.test"]
+inputs = "count: successes (scalar or per group); nobs: trials; value: null proportion for one sample."
+returns = "Tuple (z statistic, p-value)."
+example = '''
+import numpy as np
+from scipy import stats
+from statsmodels.stats.proportion import proportions_ztest
+
+complications = np.array([18, 30])
+patients = np.array([120, 115])
+z_stat, p_value = proportions_ztest(count=complications, nobs=patients)
+print("z =", round(z_stat, 3), " p =", round(p_value, 4))
+
+# z^2 equals the uncorrected chi-square; R's prop.test default adds Yates correction
+table = np.column_stack([complications, patients - complications])
+chi2_plain = stats.chi2_contingency(table, correction=False)
+print("prop.test(correct = TRUE) p =", round(stats.chi2_contingency(table).pvalue, 4))
+assert np.isclose(z_stat ** 2, chi2_plain.statistic)
+'''
+caveats = [
+    "No continuity correction: matches prop.test(correct = FALSE). R's default prop.test applies Yates; reproduce it with stats.chi2_contingency(table) (correction=True).",
+    "Returns a plain tuple, not a result object. CIs for each proportion: proportion_confint; for the difference: statsmodels.stats.proportion.confint_proportions_2indep.",
+    "Variance uses the pooled proportion by default (prop_var=False), as in the chi-square test.",
+]
+see_also = ["binomtest", "chi2-contingency", "power-analysis"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.proportion.proportions_ztest.html"
+
+[[entry]]
+id = "multipletests"
+title = "Multiple-testing correction: Bonferroni, Holm, Benjamini-Hochberg FDR"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.multitest import multipletests"
+call = "multipletests(pvalues, alpha=0.05, method='holm')"
+aliases = ["adjust p values", "p value adjustment", "bonferroni correction", "holm correction", "false discovery rate", "fdr", "benjamini hochberg", "bh correction", "multiple comparisons correction", "q values"]
+r = ["p.adjust"]
+inputs = "Array of raw p-values; method name ('bonferroni', 'holm', 'fdr_bh', 'fdr_by', 'hommel', ...)."
+returns = "Tuple (reject: bool array, pvals_corrected, alphacSidak, alphacBonf)."
+example = '''
+import numpy as np
+from statsmodels.stats.multitest import multipletests
+
+raw_p = np.array([0.001, 0.008, 0.012, 0.040, 0.20, 0.64])
+for method in ["bonferroni", "holm", "fdr_bh"]:
+    reject, adjusted, _, _ = multipletests(raw_p, alpha=0.05, method=method)
+    print(f"{method:>10}:", adjusted.round(4), reject)
+
+bonf = multipletests(raw_p, method="bonferroni")[1]
+assert np.allclose(bonf, np.minimum(raw_p * raw_p.size, 1))
+'''
+caveats = [
+    "The DEFAULT method is 'hs' (Holm-Sidak), NOT Holm. R's p.adjust defaults to 'holm'. Always pass method explicitly.",
+    "Method names differ: R 'BH'/'fdr' -> 'fdr_bh'; R 'BY' -> 'fdr_by'.",
+    "Returns a 4-tuple; the adjusted p-values are element [1]. scipy.stats.false_discovery_control(p) is a one-line BH alternative.",
+]
+see_also = ["tukey-hsd", "kruskal-wallis"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.multitest.multipletests.html"
+
+[[entry]]
+id = "bootstrap-ci"
+title = "Bootstrap confidence interval for any statistic"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.bootstrap((x,), np.median, n_resamples=9999, method='BCa', rng=rng)"
+aliases = ["bootstrap", "bootstrap confidence interval", "resampling confidence interval", "bca interval", "percentile bootstrap", "ci for median"]
+r = ["boot::boot", "boot::boot.ci"]
+inputs = "data: a TUPLE of arrays (even for one sample); statistic(*samples, axis) function."
+returns = "BootstrapResult: .confidence_interval (low, high), .standard_error, .bootstrap_distribution."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(30)
+length_of_stay = rng.lognormal(1.5, 0.6, 50)
+
+result = stats.bootstrap((length_of_stay,), np.median, n_resamples=4999,
+                         confidence_level=0.95, method="BCa", rng=rng)
+print("median =", round(np.median(length_of_stay), 2))
+print("BCa 95% CI:", result.confidence_interval, " SE:", round(result.standard_error, 3))
+
+# Paired two-sample statistic: pass both arrays and paired=True
+ci = result.confidence_interval
+assert ci.low < np.median(length_of_stay) < ci.high
+'''
+caveats = [
+    "data must be a sequence of samples: (x,) not x.",
+    "Default method='BCa' (like boot.ci type = 'bca'); also 'percentile' and 'basic'. R's boot.ci returns several types at once.",
+    "Seed with rng=np.random.default_rng(seed); random_state is the legacy name.",
+    "statistic should accept an axis argument for speed (NumPy reductions do). For custom functions set vectorized=False.",
+]
+see_also = ["permutation-test", "auc-bootstrap-ci", "correlation-test"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html"
+
+[[entry]]
+id = "permutation-test"
+title = "Permutation (randomization) test for any statistic"
+kind = "fit"
+library = "SciPy"
+import = "from scipy import stats"
+call = "stats.permutation_test((x, y), statistic, permutation_type='independent', rng=rng)"
+aliases = ["permutation test", "randomization test", "exact permutation", "shuffle test", "resampling p value", "monte carlo p value"]
+r = ["coin::oneway_test", "perm::permTS", "coin::independence_test"]
+inputs = "data: tuple of samples; statistic(*samples, axis) -> number; permutation_type 'independent' | 'samples' (paired) | 'pairings' (correlation)."
+returns = "PermutationTestResult: .statistic, .pvalue, .null_distribution."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(31)
+treated = rng.normal(5.8, 1.5, 20)
+control = rng.normal(5.0, 1.5, 22)
+
+def mean_difference(x, y, axis):
+    return np.mean(x, axis=axis) - np.mean(y, axis=axis)
+
+result = stats.permutation_test((treated, control), mean_difference, vectorized=True,
+                                n_resamples=9999, alternative="two-sided", rng=rng)
+print("diff =", round(result.statistic, 3), " permutation p =", round(result.pvalue, 4))
+assert np.isclose(result.statistic, treated.mean() - control.mean())
+'''
+caveats = [
+    "permutation_type: 'independent' for two groups, 'samples' for paired data (sign flips), 'pairings' for correlation.",
+    "If the number of distinct permutations is <= n_resamples an EXACT test is done; otherwise Monte Carlo (seed with rng).",
+    "vectorized=True requires the statistic to take an axis argument.",
+]
+see_also = ["bootstrap-ci", "mann-whitney", "ttest"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html"
+
+[[entry]]
+id = "power-analysis"
+title = "Power and sample size for a two-sample t-test or two proportions"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.power import TTestIndPower, NormalIndPower\nfrom statsmodels.stats.proportion import proportion_effectsize"
+call = "TTestIndPower().solve_power(effect_size=d, alpha=0.05, power=0.8, ratio=1.0)"
+aliases = ["sample size calculation", "power calculation", "how many patients", "power analysis t test", "sample size two proportions", "cohen d power", "cohen h"]
+r = ["pwr::pwr.t.test", "pwr::pwr.2p.test", "power.t.test", "power.prop.test"]
+inputs = "Leave exactly ONE of effect_size, nobs1, alpha, power as None; it is solved for."
+returns = "The missing quantity (float). nobs1 = size of group 1; group 2 = nobs1 * ratio."
+example = '''
+import math
+from statsmodels.stats.power import TTestIndPower, NormalIndPower
+from statsmodels.stats.proportion import proportion_effectsize
+
+n_per_group = TTestIndPower().solve_power(effect_size=0.5, alpha=0.05, power=0.80, ratio=1.0)
+print("t-test, d = 0.5: n per group =", math.ceil(n_per_group))      # 64, like pwr.t.test
+
+power_at_40 = TTestIndPower().solve_power(effect_size=0.5, nobs1=40, alpha=0.05)
+print("power with 40 per group =", round(power_at_40, 3))
+
+cohen_h = proportion_effectsize(0.30, 0.15)
+n_props = NormalIndPower().solve_power(effect_size=cohen_h, alpha=0.05, power=0.80)
+print("proportions 30% vs 15%: n per group =", math.ceil(n_props))     # pwr.2p.test
+assert math.ceil(n_per_group) == 64
+'''
+caveats = [
+    "effect_size is standardized (Cohen's d for TTestIndPower; Cohen's h = proportion_effectsize(p1, p2) for NormalIndPower), not a raw difference as in power.t.test(delta, sd).",
+    "nobs1 is group 1's size; ratio = n2/n1. Round UP.",
+    "alternative is 'two-sided' / 'larger' / 'smaller' (R: 'two.sided', 'greater', 'less').",
+    "power.prop.test uses a different (non-arcsine) formula than pwr.2p.test; NormalIndPower + Cohen's h matches pwr.2p.test.",
+]
+see_also = ["ttest", "proportions-ztest"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.power.TTestIndPower.html"

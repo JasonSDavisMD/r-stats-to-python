@@ -1,4 +1,4 @@
-"""Catalog loader: reads ``catalog/*.toml`` into validated ``Entry`` objects.
+"""Catalog loader: reads ``statsbench/catalog/*.toml`` into validated ``Entry`` objects.
 
 Each TOML file is one course topic and holds ``[[entry]]`` tables. Loading
 is fault-isolated: a file that fails to parse, or an entry that fails
@@ -8,9 +8,11 @@ topics still load, so one bad edit cannot take down search.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import tomllib
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 
 # The operation kinds the workbench teaches. See docs/operation-kinds.md.
@@ -24,8 +26,8 @@ KINDS = {
 }
 
 REQUIRED = ("id", "title", "kind", "library", "import", "call", "example", "docs")
-LISTS = ("aliases", "r", "caveats", "see_also")
-OPTIONAL_TEXT = ("inputs", "returns", "recipe")
+LISTS = ("aliases", "r", "caveats", "see_also", "requires")
+OPTIONAL_TEXT = ("inputs", "returns", "recipe", "extra")
 
 
 @dataclass(frozen=True)
@@ -45,9 +47,15 @@ class Entry:
     r: tuple[str, ...] = ()
     caveats: tuple[str, ...] = ()
     see_also: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()   # importable modules beyond the core install
     inputs: str = ""
     returns: str = ""
     recipe: str = ""
+    extra: str = ""                  # optional install group, e.g. "deep" -> statsbench[deep]
+
+    def missing_modules(self) -> list[str]:
+        """Modules this entry needs that are not installed in this interpreter."""
+        return [m for m in self.requires if importlib.util.find_spec(m) is None]
 
 
 @dataclass
@@ -66,23 +74,16 @@ class Catalog:
 
 
 def default_catalog_dir() -> Path:
-    """Locate ``catalog/``: $PSL_CATALOG_DIR, else walk up to the workbench root."""
-    override = os.environ.get("PSL_CATALOG_DIR")
+    """The catalog shipped inside the package; $STATSBENCH_CATALOG_DIR overrides it.
+
+    Using importlib.resources (not a path relative to the repository) means the
+    catalog is found whether statsbench runs from a clone or was installed from
+    GitHub into another project, e.g. a private coursework repository.
+    """
+    override = os.environ.get("STATSBENCH_CATALOG_DIR")
     if override:
         return Path(override)
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / "catalog"
-        if candidate.is_dir() and (parent / "pyproject.toml").is_file():
-            return candidate
-    raise FileNotFoundError(
-        "Could not find the workbench 'catalog/' folder. Install the project "
-        "editable (`uv sync`) or set PSL_CATALOG_DIR."
-    )
-
-
-def workbench_root() -> Path:
-    """The folder containing pyproject.toml and catalog/."""
-    return default_catalog_dir().parent
+    return Path(str(resources.files("statsbench") / "catalog"))
 
 
 def _entry_from_table(table: dict, topic: str) -> Entry:
@@ -111,6 +112,7 @@ def _entry_from_table(table: dict, topic: str) -> Entry:
         r=tuple(table.get("r", [])),
         caveats=tuple(table.get("caveats", [])),
         see_also=tuple(table.get("see_also", [])),
+        requires=tuple(table.get("requires", [])),
         **{key: str(table.get(key, "")).strip() for key in OPTIONAL_TEXT},
     )
 

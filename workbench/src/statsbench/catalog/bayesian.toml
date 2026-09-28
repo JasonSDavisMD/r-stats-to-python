@@ -1,0 +1,377 @@
+# Topic: bayesian -- posteriors from conjugate formulas (SciPy) and from MCMC (PyMC), summarized and checked with ArviZ.
+# Key distinction: a CONJUGATE posterior is a closed-form distribution you evaluate  vs  an MCMC posterior is a set of draws you summarize.
+# Add-on (PyMC and ArviZ entries only): uv sync --extra bayes
+# Versions: PyMC 6 returns an xarray DataTree (was InferenceData); ArviZ 1.x defaults to an 89% equal-tailed interval.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "beta-binomial-posterior"
+title = "Conjugate beta-binomial posterior for a proportion, with credible interval"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy import stats"
+call = "post = stats.beta(a + successes, b + failures) ; post.mean() ; post.interval(0.95)"
+aliases = ["beta binomial", "conjugate prior", "posterior for a proportion", "bayesian proportion", "credible interval", "beta posterior", "bayesian update", "posterior probability p greater than"]
+r = ["qbeta", "pbeta", "dbeta"]
+inputs = "Prior Beta(a, b) parameters; observed successes and failures."
+returns = "A frozen scipy.stats.beta distribution: .mean(), .interval(), .ppf(), .cdf(), .sf(), .rvs()."
+example = '''
+import numpy as np
+from scipy import stats
+
+a_prior, b_prior = 1, 1            # uniform prior on p
+successes, n = 7, 20
+post = stats.beta(a_prior + successes, b_prior + n - successes)   # Beta(8, 14)
+
+lo, hi = post.interval(0.95)       # equal-tailed 95% credible interval, like qbeta(c(.025, .975), 8, 14)
+print("posterior mean:", round(post.mean(), 4))
+print("95% credible interval:", round(lo, 4), round(hi, 4))
+print("P(p > 0.5 | data):", round(post.sf(0.5), 4))    # sf = 1 - cdf, like pbeta(0.5, 8, 14, lower.tail = FALSE)
+assert np.isclose(post.mean(), 8 / 22)
+'''
+caveats = [
+    "SciPy's beta(a, b) matches R's shape1/shape2 (dbeta(x, a, b)); no rate/scale confusion here.",
+    ".interval(0.95) is EQUAL-TAILED; a highest-density interval (HDI) differs for skewed posteriors (use arviz.hdi on draws).",
+    "This is exact: no sampling. Use MCMC (pymc-linear-regression etc.) only when no conjugate form exists.",
+]
+see_also = ["gamma-poisson-posterior", "binom-dist", "arviz-summary"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.beta.html"
+
+[[entry]]
+id = "gamma-poisson-posterior"
+title = "Conjugate gamma-Poisson posterior for a rate"
+kind = "evaluate"
+library = "SciPy"
+import = "from scipy import stats"
+call = "post = stats.gamma(a=shape + y.sum(), scale=1 / (rate + len(y))) ; post.interval(0.95)"
+aliases = ["gamma poisson", "poisson rate posterior", "conjugate gamma prior", "bayesian rate", "posterior for a count rate"]
+r = ["qgamma", "dgamma", "pgamma"]
+inputs = "Prior Gamma(shape, rate); observed counts y."
+returns = "A frozen scipy.stats.gamma distribution for the Poisson rate."
+example = '''
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(11)
+y = rng.poisson(3.0, size=25)
+shape, rate = 2.0, 1.0                                   # Gamma(shape, rate) prior
+post = stats.gamma(a=shape + y.sum(), scale=1 / (rate + len(y)))   # SciPy uses SCALE = 1/rate
+print("posterior mean:", round(post.mean(), 3), " 95% CrI:", np.round(post.interval(0.95), 3))
+assert np.isclose(post.mean(), (shape + y.sum()) / (rate + len(y)))
+'''
+caveats = [
+    "SciPy's gamma takes scale = 1/rate. R's qgamma(p, shape, rate) is stats.gamma(a=shape, scale=1/rate).ppf(p).",
+]
+see_also = ["beta-binomial-posterior", "glm-poisson"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gamma.html"
+
+[[entry]]
+id = "pymc-linear-regression"
+title = "Bayesian linear regression with PyMC (priors, Normal likelihood, MCMC sampling)"
+kind = "fit"
+library = "PyMC"
+import = "import pymc as pm\nimport arviz as az"
+call = "with pm.Model(): ... pm.Normal('y', mu=b0 + b1 * x, sigma=sigma, observed=y) ; idata = pm.sample(draws=1000, tune=1000, chains=4, random_seed=1)"
+aliases = ["bayesian regression", "bayesian linear regression", "mcmc", "nuts", "pymc", "stan", "posterior sampling", "priors", "pm.sample", "hamiltonian monte carlo", "probabilistic programming"]
+r = ["rstanarm::stan_glm", "brms::brm", "rjags::jags.model", "MCMCpack::MCMCregress"]
+inputs = "Data arrays; a prior for every unknown; observed= on the likelihood."
+returns = "xarray DataTree with groups posterior, sample_stats, observed_data; idata.posterior['b1'] has dims (chain, draw)."
+example = '''
+import numpy as np
+import pymc as pm
+import arviz as az
+
+rng = np.random.default_rng(1)
+x = rng.normal(size=100)
+y = 1.0 + 2.0 * x + rng.normal(scale=0.5, size=100)
+
+with pm.Model() as model:
+    b0 = pm.Normal("b0", mu=0, sigma=10)          # priors
+    b1 = pm.Normal("b1", mu=0, sigma=10)
+    sigma = pm.HalfNormal("sigma", sigma=5)
+    pm.Normal("y", mu=b0 + b1 * x, sigma=sigma, observed=y)   # likelihood
+    idata = pm.sample(draws=300, tune=300, chains=2, cores=1, random_seed=1,
+                      progressbar=False, quiet=True)          # use 1000+ draws, 4 chains in practice
+
+post_b1 = idata.posterior["b1"]                    # DataArray, dims (chain, draw)
+print("posterior mean of b1:", round(float(post_b1.mean()), 3))
+print(az.summary(idata, round_to=3))
+print("OLS slope:", round(np.polyfit(x, y, 1)[0], 3))
+assert abs(float(post_b1.mean()) - 2.0) < 0.2
+'''
+caveats = [
+    "PyMC 6 returns an xarray DataTree (ArviZ 1.x), not the old InferenceData; idata.posterior['b1'] and az.summary work the same way.",
+    "pm.Normal takes sigma (SD), like R's rnorm sd; Stan/JAGS conventions differ (JAGS uses precision tau = 1/sd^2).",
+    "Results are random draws: set random_seed. Few draws/chains (as here, for speed) give noisy R-hat; use chains=4 and draws >= 1000 for real work.",
+    "With vague priors the posterior mean is close to the OLS estimate (smf-ols); rstanarm uses weakly informative default priors, PyMC has no defaults.",
+    "Windows / notebooks: cores=1 avoids multiprocessing start-up problems.",
+]
+see_also = ["arviz-summary", "arviz-plot-trace", "pymc-posterior-predictive", "pymc-prior-predictive", "pymc-logistic-regression", "smf-ols"]
+docs = "https://www.pymc.io/projects/docs/en/stable/api/generated/pymc.sample.html"
+requires = ["pymc", "arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "pymc-logistic-regression"
+title = "Bayesian logistic regression with PyMC (Bernoulli likelihood, logit_p)"
+kind = "fit"
+library = "PyMC"
+import = "import pymc as pm\nimport arviz as az"
+call = "pm.Bernoulli('y', logit_p=a + b * x, observed=y)"
+aliases = ["bayesian logistic regression", "bayesian logit", "bernoulli likelihood", "logit_p", "bayesian binary regression", "bayesian glm binomial"]
+r = ["rstanarm::stan_glm(family = binomial)", "brms::brm(family = bernoulli)"]
+inputs = "0/1 outcome array; predictors; priors on coefficients."
+returns = "DataTree of posterior draws for the log-odds coefficients."
+example = '''
+import numpy as np
+import pymc as pm
+import arviz as az
+from scipy.special import expit
+
+rng = np.random.default_rng(2)
+x = rng.normal(size=200)
+y = rng.binomial(1, expit(-0.5 + 1.5 * x))
+
+with pm.Model() as model:
+    a = pm.Normal("a", mu=0, sigma=2.5)
+    b = pm.Normal("b", mu=0, sigma=2.5)
+    pm.Bernoulli("y", logit_p=a + b * x, observed=y)     # p = expit(a + b x)
+    idata = pm.sample(draws=300, tune=300, chains=2, cores=1, random_seed=2,
+                      progressbar=False, quiet=True)
+
+summ = az.summary(idata, kind="stats", round_to="none")  # numeric DataFrame
+print(summ)
+b_draws = idata.posterior["b"].values.ravel()
+print("P(b > 0 | data):", (b_draws > 0).mean())
+print("posterior mean P(y=1 | x=1):", expit(idata.posterior["a"] + idata.posterior["b"]).mean().item())
+assert abs(summ.loc["b", "mean"] - 1.5) < 0.6
+'''
+caveats = [
+    "Coefficients are on the LOG-ODDS scale, as in glm(family = binomial); transform draws with expit (per draw, then summarize), not the posterior mean.",
+    "logit_p= avoids computing p yourself; pm.Bernoulli('y', p=pm.math.invlogit(eta)) is equivalent but less stable.",
+    "Normal(0, 2.5) priors resemble rstanarm's default weakly informative priors on standardized predictors.",
+]
+see_also = ["glm-binomial", "expit", "pymc-linear-regression", "arviz-summary"]
+docs = "https://www.pymc.io/projects/docs/en/stable/api/distributions/generated/pymc.Bernoulli.html"
+requires = ["pymc", "arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "pymc-hierarchical"
+title = "Hierarchical (multilevel) model with random intercepts and partial pooling in PyMC"
+kind = "fit"
+library = "PyMC"
+import = "import pymc as pm\nimport arviz as az"
+call = "with pm.Model(coords={'group': names}): mu = pm.Normal(...); tau = pm.HalfNormal(...); a = pm.Normal('a', mu, tau, dims='group'); pm.Normal('y', a[g], sigma, observed=y)"
+aliases = ["bayesian hierarchical model", "bayesian multilevel model", "bayesian random intercepts", "partial pooling", "shrinkage toward group mean", "bayesian mixed effects model", "non-centered parameterization", "varying intercepts", "pymc hierarchical"]
+r = ["brms::brm(y ~ 1 + (1 | group))", "rstanarm::stan_lmer"]
+inputs = "Outcome y; integer group index g (0..J-1) per row; group names for coords."
+returns = "DataTree with a 'group' dimension: one posterior intercept per group plus the population mean mu and SD tau."
+example = '''
+import numpy as np
+import pymc as pm
+import arviz as az
+
+rng = np.random.default_rng(3)
+sizes = np.array([3, 5, 10, 20, 40, 60])          # unequal group sizes
+J = len(sizes)
+g = np.repeat(np.arange(J), sizes)                 # 0-based group index per row
+true_a = rng.normal(5.0, 1.5, size=J)
+y = true_a[g] + rng.normal(0, 2.0, size=g.size)
+
+coords = {"group": [f"g{j}" for j in range(J)]}
+with pm.Model(coords=coords) as model:
+    mu = pm.Normal("mu", 0, 10)                    # population mean intercept
+    tau = pm.HalfNormal("tau", 5)                  # between-group SD
+    z = pm.Normal("z", 0, 1, dims="group")         # non-centered: a = mu + tau * z
+    a = pm.Deterministic("a", mu + tau * z, dims="group")
+    sigma = pm.HalfNormal("sigma", 5)
+    pm.Normal("y", mu=a[g], sigma=sigma, observed=y)
+    idata = pm.sample(draws=300, tune=300, chains=2, cores=1, random_seed=3,
+                      progressbar=False, quiet=True, target_accept=0.9)
+
+summ = az.summary(idata, var_names=["mu", "tau", "sigma", "a"], round_to="none")
+print(summ[["mean", "sd", "r_hat"]].round(2))
+raw = np.array([y[g == j].mean() for j in range(J)])      # no pooling
+pooled = idata.posterior["a"].mean(("chain", "draw")).values
+grand = float(idata.posterior["mu"].mean())
+print("raw means:   ", raw.round(2))
+print("partial pool:", pooled.round(2))
+# the smallest group is shrunk toward mu the most
+assert abs(pooled[0] - grand) <= abs(raw[0] - grand)
+'''
+caveats = [
+    "PyMC indexes groups 0-based: convert factors with pd.factorize or pd.Categorical(...).codes.",
+    "The non-centered form (mu + tau * z) avoids divergences when groups have few observations; the centered pm.Normal('a', mu, tau) is equivalent in theory.",
+    "lme4::lmer gives REML point estimates; this gives full posteriors for mu, tau and each group. brms builds this model from the formula y ~ 1 + (1 | group); PyMC needs it written out (the Bambi package offers brms-style formulas).",
+    "Check r_hat and divergences; raise target_accept (e.g. 0.95) if you see divergence warnings.",
+]
+see_also = ["pymc-linear-regression", "arviz-summary", "arviz-plot-trace"]
+docs = "https://www.pymc.io/projects/examples/en/latest/generalized_linear_models/multilevel_modeling.html"
+requires = ["pymc", "arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "arviz-summary"
+title = "Posterior summary table: mean, sd, credible interval (HDI or ETI), R-hat, ESS"
+kind = "compute"
+library = "ArviZ"
+import = "import arviz as az"
+call = "az.summary(idata, var_names=['b1'], ci_kind='hdi', ci_prob=0.95, round_to='none')"
+aliases = ["posterior summary", "arviz summary", "r hat", "rhat", "effective sample size", "ess", "hdi", "highest density interval", "credible interval from draws", "convergence diagnostics", "mcmc diagnostics"]
+r = ["posterior::summarise_draws", "summary.stanreg", "bayestestR::hdi", "coda::gelman.diag", "coda::effectiveSize"]
+inputs = "DataTree/InferenceData from pm.sample (or a dict of arrays via az.from_dict)."
+returns = "DataFrame: one row per parameter; mean, sd, interval bounds (e.g. hdi95_lb/hdi95_ub), ess_bulk, ess_tail, r_hat, mcse."
+example = '''
+import numpy as np
+import arviz as az
+
+rng = np.random.default_rng(6)
+draws = {"theta": rng.normal(1.0, 0.5, size=(4, 1000)),     # (chain, draw) arrays
+         "sigma": np.abs(rng.normal(2.0, 0.1, size=(4, 1000)))}
+idata = az.from_dict({"posterior": draws})                   # or the result of pm.sample
+
+summ = az.summary(idata, ci_kind="hdi", ci_prob=0.95, round_to="none")
+print(summ.round(3))
+print(list(summ.columns))
+print(az.hdi(idata, prob=0.95)["theta"].values)              # just the interval
+print("max r_hat:", summ["r_hat"].max())
+assert summ["r_hat"].max() < 1.01 and summ["ess_bulk"].min() > 1000
+'''
+caveats = [
+    "ArviZ 1.x defaults to an 89% EQUAL-TAILED interval (columns eti89_lb/eti89_ub); older ArviZ used 94% HDI. Pass ci_kind='hdi', ci_prob=0.95 to be explicit.",
+    "By default numbers are rounded and returned as STRINGS for display; pass round_to='none' to compute with them.",
+    "Rule of thumb: r_hat < 1.01 and ess_bulk > 400 before trusting the summary.",
+    "ArviZ 1.x takes xarray DataTree objects; az.from_dict({'posterior': {...}}) wraps plain (chain, draw) arrays.",
+]
+see_also = ["pymc-linear-regression", "arviz-plot-trace", "beta-binomial-posterior"]
+docs = "https://python.arviz.org/en/latest/api/index.html"
+requires = ["arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "arviz-plot-trace"
+title = "Trace plot and posterior density plot of MCMC draws"
+kind = "visualize"
+library = "ArviZ"
+import = "import arviz as az\nimport matplotlib.pyplot as plt"
+call = "az.plot_trace_dist(idata) ; az.plot_dist(idata, var_names=['theta'])"
+aliases = ["trace plot", "traceplot", "posterior plot", "plot posterior", "posterior density plot", "mcmc chains plot", "plot_trace", "plot_posterior"]
+r = ["bayesplot::mcmc_trace", "bayesplot::mcmc_dens", "bayesplot::mcmc_areas", "plot.mcmc", "coda::traceplot"]
+inputs = "DataTree/InferenceData with a posterior group."
+returns = "An arviz_plots PlotCollection (matplotlib figure underneath)."
+example = '''
+import numpy as np
+import arviz as az
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(7)
+idata = az.from_dict({"posterior": {"theta": rng.normal(1.0, 0.5, size=(2, 500)),
+                                    "sigma": np.abs(rng.normal(2.0, 0.2, size=(2, 500)))}})
+
+pc = az.plot_trace_dist(idata)                 # density + trace per variable (classic plot_trace)
+pc_post = az.plot_dist(idata, var_names=["theta"], ci_kind="hdi", ci_prob=0.95)   # posterior density with HDI
+print(type(pc).__name__, len(plt.get_fignums()), "figures")
+plt.close("all")
+'''
+caveats = [
+    "ArviZ 1.x renamed/restructured plots: plot_trace draws only traces, plot_trace_dist is the old density-plus-trace layout, and plot_dist replaces plot_posterior.",
+    "Plots return a PlotCollection, not matplotlib axes; call plt.savefig / plt.show as usual with the matplotlib backend.",
+    "Good chains look like overlapping 'hairy caterpillars'; trends or chains stuck apart mean non-convergence.",
+]
+see_also = ["arviz-summary", "pymc-linear-regression", "pymc-posterior-predictive"]
+docs = "https://python.arviz.org/en/latest/api/index.html"
+requires = ["arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "pymc-posterior-predictive"
+title = "Posterior predictive check: simulate replicated data from the fitted model"
+kind = "evaluate"
+library = "PyMC"
+import = "import pymc as pm\nimport arviz as az"
+call = "pm.sample_posterior_predictive(idata, extend_inferencedata=True, random_seed=1) ; az.plot_ppc_dist(idata)"
+aliases = ["posterior predictive check", "ppc", "posterior predictive", "simulate from posterior", "bayesian model check", "replicated data", "pp_check"]
+r = ["brms::pp_check", "bayesplot::ppc_dens_overlay", "rstanarm::posterior_predict"]
+inputs = "The model context and the idata returned by pm.sample."
+returns = "Adds a posterior_predictive group with dims (chain, draw, obs); az.plot_ppc_dist overlays replicated and observed densities."
+example = '''
+import numpy as np
+import pymc as pm
+import arviz as az
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(8)
+x = rng.normal(size=80)
+y = 0.5 + 1.0 * x + rng.standard_t(df=3, size=80)       # heavy-tailed truth
+
+with pm.Model() as model:
+    b0 = pm.Normal("b0", 0, 5)
+    b1 = pm.Normal("b1", 0, 5)
+    sigma = pm.HalfNormal("sigma", 5)
+    pm.Normal("y", mu=b0 + b1 * x, sigma=sigma, observed=y)
+    idata = pm.sample(draws=300, tune=300, chains=2, cores=1, random_seed=8,
+                      progressbar=False, quiet=True)
+    pm.sample_posterior_predictive(idata, extend_inferencedata=True, random_seed=8,
+                                   progressbar=False)
+
+y_rep = idata.posterior_predictive["y"].values.reshape(-1, len(y))   # (draws, n)
+# Bayesian p-value for the maximum |residual-scale| statistic
+p_val = (np.abs(y_rep).max(axis=1) >= np.abs(y).max()).mean()
+print("replicated data shape:", y_rep.shape, " p-value for max|y|:", p_val)
+az.plot_ppc_dist(idata)
+plt.close("all")
+assert y_rep.shape == (600, 80)
+'''
+caveats = [
+    "Pass extend_inferencedata=True to add the posterior_predictive group to idata; otherwise a new DataTree is returned and az.plot_ppc_dist(idata) cannot find it.",
+    "ArviZ 1.x names: plot_ppc_dist (was plot_ppc); for binary outcomes use az.plot_ppc_pava or plot_ppc_rootogram for counts.",
+    "For predictions at NEW x values, put x in pm.Data, call pm.set_data({...}) and sample_posterior_predictive(..., predictions=True).",
+]
+see_also = ["pymc-linear-regression", "pymc-prior-predictive", "arviz-plot-trace"]
+docs = "https://www.pymc.io/projects/docs/en/stable/api/generated/pymc.sample_posterior_predictive.html"
+requires = ["pymc", "arviz"]
+extra = "bayes"
+
+[[entry]]
+id = "pymc-prior-predictive"
+title = "Prior predictive check: simulate data implied by the priors before fitting"
+kind = "evaluate"
+library = "PyMC"
+import = "import pymc as pm"
+call = "prior = pm.sample_prior_predictive(draws=500, random_seed=1)"
+aliases = ["prior predictive check", "prior predictive", "simulate from prior", "choose priors", "prior sensitivity", "sample prior"]
+r = ["brms::brm(sample_prior = 'only')", "rstanarm::stan_glm(prior_PD = TRUE)"]
+inputs = "A model context (observed data may be present; it is ignored for simulation)."
+returns = "DataTree with groups prior (parameter draws) and prior_predictive (simulated outcomes, dims (chain, draw, obs))."
+example = '''
+import numpy as np
+import pymc as pm
+
+rng = np.random.default_rng(9)
+x = rng.uniform(0, 10, size=50)            # e.g. years of exposure
+y = 20 + 1.5 * x + rng.normal(0, 3, size=50)
+
+with pm.Model() as model:
+    b0 = pm.Normal("b0", 0, 100)          # very vague priors ...
+    b1 = pm.Normal("b1", 0, 100)
+    sigma = pm.HalfNormal("sigma", 50)
+    pm.Normal("y", mu=b0 + b1 * x, sigma=sigma, observed=y)
+    prior = pm.sample_prior_predictive(draws=500, random_seed=9)
+
+y_sim = prior.prior_predictive["y"].values.ravel()
+print("groups:", list(prior.children))
+print("simulated y 5%/50%/95%:", np.percentile(y_sim, [5, 50, 95]).round(0))
+print("observed y range:", y.min().round(1), y.max().round(1))
+# The priors allow outcomes hundreds of units away from anything plausible
+assert np.percentile(np.abs(y_sim), 95) > 10 * np.abs(y).max()
+'''
+caveats = [
+    "Use this to check that priors produce plausible data (right sign, magnitude) BEFORE seeing the fit; vague priors often imply absurd outcomes.",
+    "The draws argument is draws= (PyMC 6); the result is a separate DataTree unless you merge it with the posterior.",
+    "Priors are on the parameter scale: for logistic models, a Normal(0, 10) prior on log-odds puts most prior mass on p near 0 or 1.",
+]
+see_also = ["pymc-posterior-predictive", "pymc-linear-regression"]
+docs = "https://www.pymc.io/projects/docs/en/stable/api/generated/pymc.sample_prior_predictive.html"
+requires = ["pymc"]
+extra = "bayes"

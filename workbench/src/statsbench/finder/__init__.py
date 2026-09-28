@@ -1,6 +1,6 @@
-"""Task-to-tool finder: ``from psl.finder import find`` works inside notebooks.
+"""Task-to-tool finder: ``from statsbench.finder import find`` works inside notebooks.
 
-    >>> from psl.finder import find
+    >>> from statsbench.finder import find
     >>> for hit in find("R plogis"):
     ...     print(hit.entry.id, hit.entry.call)
 """

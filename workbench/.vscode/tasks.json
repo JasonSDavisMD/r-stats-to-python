@@ -4,38 +4,47 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "psl: find",
+      "label": "stats: find",
       "type": "process",
       "command": "${command:python.interpreterPath}",
-      "args": ["-m", "psl", "find", "${input:query}"],
+      "args": ["-m", "statsbench", "find", "${input:query}"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "psl: show entry",
+      "label": "stats: show entry",
       "type": "process",
       "command": "${command:python.interpreterPath}",
-      "args": ["-m", "psl", "show", "${input:entryId}"],
+      "args": ["-m", "statsbench", "show", "${input:entryId}"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "psl: R name lookup",
+      "label": "stats: R name lookup",
       "type": "process",
       "command": "${command:python.interpreterPath}",
-      "args": ["-m", "psl", "r", "${input:rName}"],
+      "args": ["-m", "statsbench", "r", "${input:rName}"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "psl: environment check",
+      "label": "stats: environment check",
       "type": "process",
       "command": "${command:python.interpreterPath}",
-      "args": ["-m", "psl.envcheck"],
+      "args": ["-m", "statsbench.envcheck"],
       "problemMatcher": []
     },
     {
-      "label": "psl: run tests",
+      // Needs the lab group: uv sync --group lab
+      "label": "JupyterLab: start",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "jupyter", "lab"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "stats: run tests",
       "type": "process",
       "command": "${command:python.interpreterPath}",
       "args": ["-m", "pytest"],
@@ -45,7 +54,7 @@
   ],
   "inputs": [
     { "id": "query", "type": "promptString", "description": "Task or R name, e.g. inverse logit / plogis / best subset" },
-    { "id": "entryId", "type": "promptString", "description": "Entry id from psl find, e.g. expit" },
+    { "id": "entryId", "type": "promptString", "description": "Entry id from stats find, e.g. expit" },
     { "id": "rName", "type": "promptString", "description": "R function name, e.g. glm (blank = full table)" }
   ]
 }

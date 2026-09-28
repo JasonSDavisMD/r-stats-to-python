@@ -55,8 +55,8 @@ docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.mean_s
 id = "best-subset"
 title = "Best subset selection (exhaustive search over predictor sets)"
 kind = "fit"
-library = "psl.recipes (scikit-learn)"
-import = "from psl.recipes.best_subset import best_subset"
+library = "statsbench.recipes (scikit-learn)"
+import = "from statsbench.recipes.best_subset import best_subset"
 call = "best_subset(X_train_df, y_train)"
 aliases = ["best subset", "all subsets regression", "regsubsets", "exhaustive model search", "subset selection mse"]
 r = ["leaps::regsubsets"]
@@ -65,7 +65,7 @@ returns = "DataFrame: size, predictors (tuple), rss, train_mse, r2 -- best model
 example = '''
 import numpy as np
 import pandas as pd
-from psl.recipes.best_subset import best_subset
+from statsbench.recipes.best_subset import best_subset
 
 rng = np.random.default_rng(14)
 X = pd.DataFrame(rng.normal(size=(80, 4)), columns=["a", "b", "c", "d"])

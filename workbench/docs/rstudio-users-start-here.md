@@ -1,5 +1,9 @@
 # RStudio users: start here
 
+> **Prefer JupyterLab?** It's the recommended interface. See
+> [jupyterlab-guide.md](jupyterlab-guide.md) for the RStudio-style JupyterLab
+> layout and a private workspace. This page covers VS Code and Positron.
+
 VS Code opens as a plain editor. This page shows how to arrange it into
 RStudio's four panes, how to launch it in the browser with no setup, and
 when to use **Positron**, Posit's RStudio-style IDE that also runs Python.
@@ -27,7 +31,7 @@ delete the Codespace.
 | cells; Shift+Enter runs  | output and plots inline  |
 +--------------------------+--------------------------+
 | VARIABLES                | TERMINAL                 |
-| = Environment pane       | psl find "..." here      |
+| = Environment pane       | stats find "..." here      |
 +--------------------------+--------------------------+
 ```
 
@@ -42,7 +46,7 @@ delete the Codespace.
    Environment pane in the bottom panel. Double-click a DataFrame or array
    to open it in the Data Viewer.
 5. Open a **new terminal** (Ctrl+Shift+`) in the same bottom panel and drag
-   its tab to the right half. `.venv` is active there: try `psl find "inverse logit"`.
+   its tab to the right half. `.venv` is active there: try `stats find "inverse logit"`.
 
 VS Code remembers this layout for the folder.
 
@@ -55,7 +59,7 @@ VS Code remembers this layout for the folder.
 | Session -> Restart R | **Restart** button in the Interactive Window toolbar |
 | Environment pane | **Variables** view |
 | `View(df)` | Double-click `df` in Variables (Data Viewer / Data Wrangler) |
-| `?fun`, Help pane | Hover over the name; `help(fun)`; `psl show <id>` |
+| `?fun`, Help pane | Hover over the name; `help(fun)`; `stats show <id>` |
 | Tab completion with argument list | Ctrl+Space; parameter hints appear after `(` (Ctrl+Shift+Space) |
 | R Markdown `.Rmd` | Jupyter notebook `.ipynb` (see `templates/exercise.ipynb`) |
 | `rm(list = ls())` then rerun | Restart, then Run All: proves no hidden state |
@@ -84,7 +88,7 @@ supports Python as a first-class language.
    the console. Plots and variables appear in their own panes.
 
 Everything in this workbench is ordinary Python, so it works the same in
-Positron, VS Code and Codespaces: `psl` search, examples, templates, tests.
+Positron, VS Code, JupyterLab and Codespaces: `stats` search, examples, templates, tests.
 
 | If you want... | Use |
 |---|---|

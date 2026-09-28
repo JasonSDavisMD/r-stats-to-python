@@ -1,0 +1,16 @@
+# Weekly dependency update pull requests. The test suite runs every catalog
+# example on each one, so an API change in a library shows up as a failing
+# check instead of a silently wrong catalog entry.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/workbench"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -1,0 +1,52 @@
+# Runs the statsbench test suite: every catalog example, every worked example,
+# search expectations, CLI and recipes. Core libraries are tested on Linux,
+# Windows and macOS; the optional add-ons (PyTorch, PyMC, XGBoost, ...) on Linux.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: workbench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked environment
+        run: uv sync --locked
+      - name: Environment check
+        run: uv run --no-sync python -m statsbench.envcheck
+      - name: Tests
+        run: uv run --no-sync pytest
+
+  add-ons:
+    name: optional add-ons (ubuntu)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workbench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked environment with every add-on
+        run: uv sync --locked --all-extras
+      - name: Tests (add-on entries included)
+        run: uv run --no-sync pytest

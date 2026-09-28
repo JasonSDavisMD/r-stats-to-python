@@ -1,5 +1,9 @@
 # coursework/
 
+> For work you want to keep and back up, use a **private repository** instead:
+> see `docs/jupyterlab-guide.md`. This folder is only for scratch work in a
+> local clone.
+
 Your own course notebooks and scripts go here. Start from a template:
 
 ```powershell

@@ -1,0 +1,548 @@
+# Topic: ml_models -- scikit-learn classifiers/regressors beyond trees, preprocessing for mixed data, and model evaluation/interpretation.
+# Key distinction: every sklearn model shares fit/predict/predict_proba, but defaults (scaling, penalties, thresholds) are NOT R's defaults.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "knn"
+title = "k-nearest neighbors classifier and regressor (KNN)"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor"
+call = "KNeighborsClassifier(n_neighbors=5).fit(X_train, y_train)"
+aliases = ["k nearest neighbors", "k-nearest neighbours", "knn classifier", "knn regression", "nearest neighbor classification", "kneighbors"]
+r = ["class::knn", "FNN::knn.reg", "caret::knn3", "knn"]
+inputs = "X_train (n, p) numeric (scale it!), y_train; n_neighbors = k."
+returns = "Fitted estimator: .predict(X_test), .predict_proba(X_test) (share of the k neighbours in each class), .kneighbors(X)."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = make_classification(n_samples=400, n_features=4, n_informative=3, n_redundant=0, random_state=41)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+knn = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5)).fit(X_train, y_train)
+acc = knn.score(X_test, y_test)                     # class::knn(train, test, cl, k = 5)
+print("test accuracy:", round(acc, 3))
+rng = np.random.default_rng(41)
+x = rng.uniform(0, 6, size=(200, 1))
+yr = np.sin(x[:, 0]) + rng.normal(scale=0.2, size=200)
+reg = KNeighborsRegressor(n_neighbors=10).fit(x, yr)
+print("KNN regression at x=1.5:", reg.predict([[1.5]]).round(3))
+assert acc > 0.7
+'''
+caveats = [
+    "class::knn fits and predicts in one call; sklearn separates .fit(train) and .predict(test).",
+    "Ties: class::knn breaks ties at random and includes all tied-distance neighbours; sklearn picks deterministically (data order), so results can differ slightly.",
+    "Distance-based: standardize features (StandardScaler in a Pipeline) or large-unit columns dominate.",
+    "weights='distance' gives inverse-distance weighting (kknn-style); the default is 'uniform'.",
+]
+see_also = ["standard-scaler", "sk-pipeline", "grid-search-cv"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KNeighborsClassifier.html"
+
+[[entry]]
+id = "svm"
+title = "Support vector machine classifier (SVC) with kernels and probabilities"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.svm import SVC\nfrom sklearn.calibration import CalibratedClassifierCV"
+call = "SVC(kernel='rbf', C=1.0, gamma='scale').fit(X_train, y_train)"
+aliases = ["support vector machine", "support vector classifier", "svc", "svm classifier", "kernel svm", "radial kernel", "linear svm", "polynomial kernel", "svm probability"]
+r = ["e1071::svm", "kernlab::ksvm", "svm"]
+inputs = "X (n, p) numeric (scale it), y labels; kernel ('linear', 'rbf', 'poly', 'sigmoid'), C, gamma, degree."
+returns = "Fitted estimator: .predict, .decision_function, .support_vectors_, .n_support_. Probabilities via CalibratedClassifierCV(SVC(), ensemble=False)."
+example = '''
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
+X, y = make_moons(n_samples=300, noise=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+svm = make_pipeline(StandardScaler(), SVC(kernel="rbf", C=1.0, gamma="scale")).fit(X_train, y_train)
+acc = svm.score(X_test, y_test)
+print("rbf accuracy:", round(acc, 3), "support vectors per class:", svm[-1].n_support_)
+# SVC(probability=True) is deprecated in scikit-learn 1.9; calibrate instead:
+prob_svm = CalibratedClassifierCV(make_pipeline(StandardScaler(), SVC(kernel="rbf")), ensemble=False, cv=5)
+prob_svm.fit(X_train, y_train)
+print("P(class 1), first 3 test rows:", prob_svm.predict_proba(X_test[:3])[:, 1].round(3))
+assert acc > 0.8
+'''
+caveats = [
+    "C here is e1071's cost (default 1 in both). Larger C = less regularization; this is the OPPOSITE of the ISLR 'budget' C.",
+    "e1071::svm scales inputs by default (scale = TRUE); SVC does NOT. Put StandardScaler in a Pipeline.",
+    "gamma default 'scale' = 1 / (p * X.var()); e1071's default is 1 / p (for scaled data these match).",
+    "SVC(probability=True) is deprecated in scikit-learn 1.9 (removed in 1.11). Use CalibratedClassifierCV(SVC(), ensemble=False) for predict_proba; decision_function is available without it.",
+    "For large n with a linear kernel, LinearSVC is much faster. Regression: sklearn.svm.SVR (e1071::svm with numeric y).",
+]
+see_also = ["probability-calibration", "standard-scaler", "grid-search-cv", "decision-boundary-display"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html"
+
+[[entry]]
+id = "naive-bayes"
+title = "Gaussian naive Bayes classifier"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.naive_bayes import GaussianNB"
+call = "GaussianNB().fit(X_train, y_train)"
+aliases = ["naive bayes", "gaussian naive bayes", "naivebayes", "conditional independence classifier", "bayes classifier"]
+r = ["e1071::naiveBayes", "naivebayes::naive_bayes", "klaR::NaiveBayes"]
+inputs = "X (n, p) numeric features, y labels. (MultinomialNB / CategoricalNB / BernoulliNB for counts or categories.)"
+returns = "Fitted estimator: .class_prior_, .theta_ (per-class means), .var_ (per-class variances), .predict, .predict_proba."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+
+X, y = make_classification(n_samples=400, n_features=4, n_informative=3, n_redundant=0, random_state=43)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+nb = GaussianNB().fit(X_train, y_train)
+print("priors:", nb.class_prior_.round(3))
+print("class means:\n", nb.theta_.round(2))
+print("class sds:\n", np.sqrt(nb.var_).round(2))       # e1071 prints means and sds
+acc = nb.score(X_test, y_test)
+print("test accuracy:", round(acc, 3))
+assert acc > 0.7
+'''
+caveats = [
+    "var_ are ML variances (divide by n) plus a tiny var_smoothing; e1071 reports sample sds (n - 1). Numbers differ slightly.",
+    "GaussianNB needs numeric features only. e1071::naiveBayes handles factors automatically; in sklearn use CategoricalNB for categorical columns (ordinal-encoded).",
+    "No Laplace smoothing argument in GaussianNB; alpha= is on MultinomialNB/CategoricalNB (e1071 laplace = 0 default vs sklearn alpha=1.0).",
+]
+see_also = ["lda", "qda", "classification-report"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.naive_bayes.GaussianNB.html"
+
+[[entry]]
+id = "hist-gradient-boosting"
+title = "Gradient boosting (histogram-based) classifier and regressor"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor"
+call = "HistGradientBoostingClassifier(learning_rate=0.1, max_iter=200, random_state=0).fit(X, y)"
+aliases = ["gradient boosting", "boosted trees", "gradient boosted machine", "histgradientboosting", "lightgbm style boosting", "boosting with missing values", "xgboost alternative"]
+r = ["gbm::gbm", "xgboost::xgboost", "lightgbm::lgb.train"]
+inputs = "X (n, p), may contain NaN (handled natively) and pandas category columns; y."
+returns = "Fitted estimator: .predict, .predict_proba (classifier), .n_iter_ (trees actually used with early stopping)."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.model_selection import train_test_split
+
+X, y = make_classification(n_samples=500, n_features=6, n_informative=4, random_state=44)
+rng = np.random.default_rng(44)
+X[rng.random(X.shape) < 0.1] = np.nan              # 10% missing, no imputation needed
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+hgb = HistGradientBoostingClassifier(learning_rate=0.1, max_iter=200, random_state=0).fit(X_train, y_train)
+acc = hgb.score(X_test, y_test)
+print("test accuracy:", round(acc, 3), "trees used:", hgb.n_iter_)
+x = rng.uniform(-2, 2, size=(300, 2))
+reg = HistGradientBoostingRegressor(max_iter=100).fit(x, x[:, 0] ** 2 + x[:, 1])
+print("regressor R^2 (train):", round(reg.score(x, x[:, 0] ** 2 + x[:, 1]), 3))
+assert acc > 0.75
+'''
+caveats = [
+    "EARLY STOPPING IS ON by default when n > 10000 (early_stopping='auto'); then 10% of the data is held out. Set early_stopping=False for a fixed number of trees like gbm's n.trees.",
+    "Parameter names: gbm n.trees = max_iter, shrinkage = learning_rate (gbm default 0.1 same), interaction.depth ~ max_depth (default None; trees are limited by max_leaf_nodes=31), n.minobsinnode = min_samples_leaf (default 20 vs 10).",
+    "NaN is handled natively (like xgboost); GradientBoostingClassifier (the older, slower class) does not accept NaN.",
+    "No built-in relative influence plot; use permutation_importance.",
+]
+see_also = ["random-forest", "permutation-importance", "partial-dependence", "missing-value-imputation"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingClassifier.html"
+
+[[entry]]
+id = "mlp-neural-net"
+title = "Neural network (multilayer perceptron) classifier"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.neural_network import MLPClassifier"
+call = "MLPClassifier(hidden_layer_sizes=(10,), alpha=1e-3, max_iter=2000, random_state=0).fit(X, y)"
+aliases = ["neural network", "multilayer perceptron", "mlp", "feed forward network", "single hidden layer network", "deep learning", "neural net classifier"]
+r = ["nnet::nnet", "neuralnet::neuralnet", "keras"]
+inputs = "X (n, p) numeric (scale it), y labels. MLPRegressor for numeric y."
+returns = "Fitted estimator: .predict, .predict_proba, .coefs_ / .intercepts_ (weights per layer), .loss_curve_."
+example = '''
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+X, y = make_moons(n_samples=400, noise=0.2, random_state=45)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+mlp = make_pipeline(
+    StandardScaler(),
+    MLPClassifier(hidden_layer_sizes=(10,), alpha=1e-3, max_iter=2000, random_state=0),
+).fit(X_train, y_train)                               # nnet(y ~ ., size = 10, decay = 1e-3)
+acc = mlp.score(X_test, y_test)
+print("test accuracy:", round(acc, 3), "iterations:", mlp[-1].n_iter_)
+assert acc > 0.8
+'''
+caveats = [
+    "nnet size = 10 is hidden_layer_sizes=(10,); decay = alpha (L2 penalty). Default activation is 'relu' (nnet uses logistic): set activation='logistic' to mimic nnet.",
+    "Default solver 'adam' with max_iter=200 often stops early with a ConvergenceWarning; raise max_iter. For small data solver='lbfgs' (nnet uses BFGS) is often better.",
+    "Scale inputs. Results depend on random_state (random initial weights), as with nnet.",
+    "For real deep learning (GPUs, CNNs, custom architectures) use PyTorch (torch), not sklearn.",
+]
+see_also = ["standard-scaler", "sk-pipeline", "learning-curve"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.neural_network.MLPClassifier.html"
+
+[[entry]]
+id = "column-transformer"
+title = "Mixed numeric and categorical data: ColumnTransformer + OneHotEncoder in a pipeline"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.compose import ColumnTransformer\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\nfrom sklearn.pipeline import make_pipeline"
+call = "ColumnTransformer([('num', StandardScaler(), num_cols), ('cat', OneHotEncoder(handle_unknown='ignore'), cat_cols)])"
+aliases = ["one hot encoding", "dummy variables", "categorical predictors", "factor variables sklearn", "mixed data types", "encode categorical features", "columntransformer", "onehotencoder", "model matrix"]
+r = ["model.matrix", "recipes::step_dummy", "recipes::step_normalize", "fastDummies::dummy_cols"]
+inputs = "pandas DataFrame; lists of numeric and categorical column names."
+returns = "Transformer producing one numeric matrix; get_feature_names_out() names the dummy columns. Used as the first step of a Pipeline."
+example = '''
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+rng = np.random.default_rng(46)
+n = 300
+df = pd.DataFrame({
+    "age": rng.normal(40, 10, n),
+    "income": rng.normal(50, 15, n),
+    "region": rng.choice(["north", "south", "west"], n),
+})
+y = (0.05 * (df["age"] - 40) + (df["region"] == "west") + rng.normal(0, 1, n) > 0.3).astype(int)
+prep = ColumnTransformer([
+    ("num", StandardScaler(), ["age", "income"]),
+    ("cat", OneHotEncoder(drop="first", handle_unknown="ignore"), ["region"]),
+])
+model = make_pipeline(prep, LogisticRegression()).fit(df, y)
+names = model[0].get_feature_names_out()
+print(dict(zip(names, model[-1].coef_[0].round(3))))
+new = pd.DataFrame({"age": [30.0], "income": [60.0], "region": ["west"]})
+print("P(y=1):", model.predict_proba(new)[0, 1].round(3))
+assert len(names) == 4
+'''
+caveats = [
+    "OneHotEncoder default keeps ALL levels (drop=None) -- fine for penalized/tree models, but collinear with the intercept; drop='first' mimics R's treatment contrasts (baseline = first level alphabetically).",
+    "handle_unknown='ignore' makes unseen test levels all-zero instead of raising; R's predict() errors on new factor levels.",
+    "Fit the whole pipeline on training data only, so scaling and levels are learned without test leakage.",
+    "Columns not listed are DROPPED by default (remainder='drop'); use remainder='passthrough' to keep them.",
+]
+see_also = ["sk-pipeline", "standard-scaler", "df-categorical", "missing-value-imputation"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.compose.ColumnTransformer.html"
+
+[[entry]]
+id = "missing-value-imputation"
+title = "Impute missing values (mean/median, KNN, iterative/MICE-style)"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.impute import KNNImputer, SimpleImputer\nfrom sklearn.experimental import enable_iterative_imputer  # noqa: F401\nfrom sklearn.impute import IterativeImputer"
+call = "SimpleImputer(strategy='median').fit_transform(X)"
+aliases = ["imputation", "impute missing values", "fill missing values", "missing data", "na imputation", "knn imputation", "iterative imputer", "multiple imputation", "mice", "simpleimputer"]
+r = ["mice::mice", "VIM::kNN", "Hmisc::impute", "recipes::step_impute_median", "missForest"]
+inputs = "Numeric X with np.nan for missing (DataFrames with NaN work)."
+returns = "Array with NaN filled. add_indicator=True appends missing-indicator columns."
+example = '''
+import numpy as np
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401  (must come first)
+from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
+
+rng = np.random.default_rng(47)
+x1 = rng.normal(size=200)
+X = np.column_stack([x1, 2 * x1 + rng.normal(scale=0.3, size=200), rng.normal(size=200)])
+truth = X.copy()
+mask = rng.random(X.shape) < 0.15
+X[mask] = np.nan
+for name, imp in [
+    ("median", SimpleImputer(strategy="median")),
+    ("knn", KNNImputer(n_neighbors=5)),
+    ("iterative", IterativeImputer(max_iter=10, random_state=0)),
+]:
+    filled = imp.fit_transform(X)
+    rmse = np.sqrt(np.mean((filled[mask] - truth[mask]) ** 2))
+    print(f"{name:9s} RMSE on imputed cells: {rmse:.3f}")
+assert not np.isnan(filled).any()
+'''
+caveats = [
+    "IterativeImputer is experimental: you MUST run `from sklearn.experimental import enable_iterative_imputer` before importing it.",
+    "IterativeImputer returns ONE completed dataset (default BayesianRidge, sample_posterior=False) -- not mice's m multiply-imputed datasets with pooled inference. For Rubin's rules use statsmodels.imputation.mice.",
+    "Put the imputer inside a Pipeline so it is fitted on training folds only.",
+    "SimpleImputer(strategy='most_frequent') handles categorical columns; KNNImputer is distance based, so scale first.",
+]
+see_also = ["column-transformer", "sk-pipeline", "df-dropna", "hist-gradient-boosting"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.impute.IterativeImputer.html"
+
+[[entry]]
+id = "classification-report"
+title = "Classification report: precision, recall and F1 per class"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import classification_report, f1_score, precision_score, recall_score"
+call = "classification_report(y_true, y_pred, digits=3)"
+aliases = ["precision recall f1", "f1 score", "precision", "recall", "classification metrics", "per class accuracy", "macro average", "positive predictive value"]
+r = ["caret::confusionMatrix(mode = 'everything')", "yardstick::f_meas", "MLmetrics::F1_Score"]
+inputs = "True labels and predicted labels (class decisions, not probabilities)."
+returns = "classification_report: formatted text (output_dict=True for a dict); precision_score etc.: floats."
+example = '''
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, f1_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
+
+X, y = make_classification(n_samples=500, n_features=5, weights=[0.7, 0.3], random_state=48)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, stratify=y, random_state=0)
+y_pred = LogisticRegression().fit(X_train, y_train).predict(X_test)
+print(classification_report(y_test, y_pred, digits=3))
+p, r, f = precision_score(y_test, y_pred), recall_score(y_test, y_pred), f1_score(y_test, y_pred)
+print(f"precision={p:.3f} recall={r:.3f} F1={f:.3f}")
+assert abs(f - 2 * p * r / (p + r)) < 1e-12
+'''
+caveats = [
+    "precision_score / recall_score / f1_score default to pos_label=1 (binary). caret's positive class is the FIRST factor level -- often the other class.",
+    "Recall of the positive class = sensitivity; recall of the negative class = specificity.",
+    "Multiclass needs average= ('macro', 'weighted', 'micro'); the report prints all three.",
+    "Undefined precision (no predicted positives) returns 0 with an UndefinedMetricWarning; set zero_division= to control it.",
+]
+see_also = ["confusion-matrix", "precision-recall-curve", "roc-auc", "class-imbalance"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.classification_report.html"
+
+[[entry]]
+id = "precision-recall-curve"
+title = "Precision-recall curve and average precision (PR AUC)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import average_precision_score, precision_recall_curve, PrecisionRecallDisplay"
+call = "precision_recall_curve(y_true, probability)"
+aliases = ["pr curve", "precision recall curve", "average precision", "pr auc", "area under precision recall", "precision recall tradeoff"]
+r = ["PRROC::pr.curve", "yardstick::pr_curve", "yardstick::pr_auc", "ROCR::performance(pred, 'prec', 'rec')"]
+inputs = "True 0/1 labels; predicted probabilities or scores for the positive class."
+returns = "precision, recall, thresholds arrays; average_precision_score returns a float."
+example = '''
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import PrecisionRecallDisplay, average_precision_score, precision_recall_curve
+from sklearn.model_selection import train_test_split
+
+X, y = make_classification(n_samples=500, n_features=5, weights=[0.85, 0.15], random_state=49)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, stratify=y, random_state=0)
+prob = LogisticRegression().fit(X_train, y_train).predict_proba(X_test)[:, 1]
+precision, recall, thresholds = precision_recall_curve(y_test, prob)
+ap = average_precision_score(y_test, prob)
+print("average precision:", round(ap, 3), "baseline (prevalence):", round(y_test.mean(), 3))
+fig, ax = plt.subplots()
+PrecisionRecallDisplay.from_predictions(y_test, prob, ax=ax)
+plt.close(fig)
+assert ap > y_test.mean()
+'''
+caveats = [
+    "Pass probabilities, not predicted classes.",
+    "average_precision_score is a step-wise sum, not the trapezoidal area; PRROC's integral / yardstick pr_auc can differ slightly.",
+    "precision and recall have one more element than thresholds (the final point precision=1, recall=0).",
+    "The no-skill baseline is the positive-class prevalence (not 0.5 as for ROC); prefer PR curves for rare positives.",
+]
+see_also = ["roc-auc", "classification-report", "class-imbalance"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_recall_curve.html"
+
+[[entry]]
+id = "probability-calibration"
+title = "Probability calibration: calibration curve and CalibratedClassifierCV"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.calibration import CalibratedClassifierCV, CalibrationDisplay, calibration_curve"
+call = "calibration_curve(y_true, probability, n_bins=10)"
+aliases = ["calibration curve", "reliability diagram", "calibrate probabilities", "platt scaling", "isotonic calibration", "brier score", "calibration plot"]
+r = ["caret::calibration", "rms::val.prob", "rms::calibrate", "CalibrationCurves::val.prob.ci.2"]
+inputs = "True 0/1 labels and predicted probabilities; or a classifier to wrap in CalibratedClassifierCV."
+returns = "calibration_curve: (prob_true, prob_pred) per bin; CalibratedClassifierCV: fitted classifier with calibrated .predict_proba."
+example = '''
+import matplotlib.pyplot as plt
+from sklearn.calibration import CalibratedClassifierCV, CalibrationDisplay, calibration_curve
+from sklearn.datasets import make_classification
+from sklearn.metrics import brier_score_loss
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+
+X, y = make_classification(n_samples=2000, n_features=10, n_informative=4, n_redundant=4, random_state=50)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=0)
+raw = GaussianNB().fit(X_train, y_train).predict_proba(X_test)[:, 1]
+cal = CalibratedClassifierCV(GaussianNB(), method="isotonic", cv=5).fit(X_train, y_train)
+calibrated = cal.predict_proba(X_test)[:, 1]
+prob_true, prob_pred = calibration_curve(y_test, calibrated, n_bins=10)
+print("observed vs predicted per bin:\n", prob_true.round(2), "\n", prob_pred.round(2))
+b_raw, b_cal = brier_score_loss(y_test, raw), brier_score_loss(y_test, calibrated)
+print("Brier raw:", round(b_raw, 4), "calibrated:", round(b_cal, 4))
+fig, ax = plt.subplots()
+CalibrationDisplay.from_predictions(y_test, calibrated, n_bins=10, ax=ax)
+plt.close(fig)
+assert b_cal < b_raw
+'''
+caveats = [
+    "calibration_curve returns (prob_true, prob_pred) -- observed frequency FIRST.",
+    "Default strategy='uniform' uses equal-width bins; strategy='quantile' gives equal-count bins (like deciles in many R plots).",
+    "CalibratedClassifierCV default method='sigmoid' (Platt); 'isotonic' needs more data. Calibrate on data not used to fit the model (cv= does this).",
+    "This is also the replacement for the deprecated SVC(probability=True): CalibratedClassifierCV(SVC(), ensemble=False).",
+]
+see_also = ["svm", "roc-auc", "naive-bayes"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.calibration.CalibratedClassifierCV.html"
+
+[[entry]]
+id = "permutation-importance"
+title = "Permutation variable importance (model-agnostic)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.inspection import permutation_importance"
+call = "permutation_importance(model, X_test, y_test, n_repeats=10, random_state=0)"
+aliases = ["permutation importance", "feature importance", "variable importance plot", "model agnostic importance", "vip", "which predictors matter"]
+r = ["vip::vi_permute", "vip::vip", "DALEX::model_parts", "iml::FeatureImp", "randomForest::importance(type = 1)"]
+inputs = "A FITTED model, held-out X and y; scoring= (default: the model's .score)."
+returns = "Bunch with importances_mean, importances_std, importances (n_features, n_repeats)."
+example = '''
+import numpy as np
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.inspection import permutation_importance
+from sklearn.model_selection import train_test_split
+
+rng = np.random.default_rng(51)
+X = rng.normal(size=(400, 4))
+y = 3 * X[:, 0] + X[:, 1] ** 2 + rng.normal(scale=0.5, size=400)   # x2, x3 are noise
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+model = HistGradientBoostingRegressor(random_state=0).fit(X_train, y_train)
+result = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=0)
+order = result.importances_mean.argsort()[::-1]
+for j in order:
+    print(f"x{j}: {result.importances_mean[j]:.3f} +/- {result.importances_std[j]:.3f}")
+assert order[0] == 0
+'''
+caveats = [
+    "Importance = drop in the model's score (R^2 or accuracy by default) when a column is shuffled; DALEX reports increase in LOSS (e.g. RMSE). Same idea, different units.",
+    "Compute on held-out data; on training data it rewards overfitting.",
+    "Correlated predictors share (and understate) importance.",
+    "Tree models' .feature_importances_ is impurity-based (like randomForest type = 2 / gbm relative influence) and biased toward high-cardinality features.",
+]
+see_also = ["partial-dependence", "random-forest", "hist-gradient-boosting"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.inspection.permutation_importance.html"
+
+[[entry]]
+id = "partial-dependence"
+title = "Partial dependence and ICE plots"
+kind = "visualize"
+library = "scikit-learn"
+import = "from sklearn.inspection import PartialDependenceDisplay, partial_dependence"
+call = "PartialDependenceDisplay.from_estimator(model, X, features=[0, 1], kind='average')"
+aliases = ["partial dependence plot", "pdp", "ice plot", "individual conditional expectation", "marginal effect plot", "effect of a predictor"]
+r = ["pdp::partial", "iml::FeatureEffect", "DALEX::model_profile", "plotmo", "gbm::plot.gbm"]
+inputs = "A fitted model, X (training data), features (indices or column names; a tuple gives a 2-way plot)."
+returns = "Display object (.axes_, .figure_); partial_dependence() returns a Bunch with grid_values and average."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.inspection import PartialDependenceDisplay, partial_dependence
+
+rng = np.random.default_rng(52)
+X = rng.uniform(-2, 2, size=(400, 3))
+y = X[:, 0] ** 2 + 2 * X[:, 1] + rng.normal(scale=0.3, size=400)
+model = HistGradientBoostingRegressor(random_state=0).fit(X, y)
+pd_x1 = partial_dependence(model, X, features=[1], grid_resolution=20)
+slope = np.polyfit(pd_x1["grid_values"][0], pd_x1["average"][0], 1)[0]
+print("PD slope for x1 (true 2):", round(slope, 2))
+fig, ax = plt.subplots(figsize=(8, 3))
+PartialDependenceDisplay.from_estimator(model, X, features=[0, 1], kind="both", subsample=50,
+                                        random_state=0, ax=ax)     # PD + ICE lines
+plt.close("all")
+assert 1.5 < slope < 2.5
+'''
+caveats = [
+    "kind='average' = PDP (pdp::partial); kind='individual' = ICE; kind='both' overlays them. centered=True gives c-ICE.",
+    "Default grid is 100 points between the 5th and 95th percentiles (percentiles=(0.05, 0.95)), not the full range as in pdp.",
+    "For classifiers the y-axis is predict_proba (or decision_function) of the positive class; use target= for multiclass.",
+    "Misleading when predictors are strongly correlated (extrapolates to impossible combinations); ALE plots (not in sklearn) avoid this.",
+]
+see_also = ["permutation-importance", "hist-gradient-boosting", "random-forest"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.inspection.PartialDependenceDisplay.html"
+
+[[entry]]
+id = "learning-curve"
+title = "Learning curve and validation curve (bias-variance diagnostics)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.model_selection import learning_curve, validation_curve"
+call = "learning_curve(model, X, y, train_sizes=np.linspace(0.1, 1.0, 5), cv=5)"
+aliases = ["learning curve", "validation curve", "training set size", "overfitting diagnostics", "bias variance tradeoff", "complexity curve", "train vs validation score"]
+r = ["caret::learning_curve_dat", "mlr3::benchmark"]
+inputs = "An (unfitted) estimator, X, y; train_sizes (learning_curve) or param_name + param_range (validation_curve); cv."
+returns = "learning_curve: train_sizes_abs, train_scores, test_scores ((n_sizes, n_folds) each); validation_curve: train_scores, test_scores."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import learning_curve, validation_curve
+from sklearn.tree import DecisionTreeClassifier
+
+X, y = make_classification(n_samples=400, n_features=8, n_informative=4, random_state=53)
+sizes, train_sc, test_sc = learning_curve(
+    DecisionTreeClassifier(max_depth=4, random_state=0), X, y,
+    train_sizes=np.linspace(0.2, 1.0, 5), cv=5)
+print("n:", sizes, "\nCV accuracy:", test_sc.mean(axis=1).round(3))
+depths = np.arange(1, 11)
+tr, te = validation_curve(DecisionTreeClassifier(random_state=0), X, y,
+                          param_name="max_depth", param_range=depths, cv=5)
+print("best depth by CV:", depths[te.mean(axis=1).argmax()])
+print("train - CV gap at depth 10:", round(tr.mean(axis=1)[-1] - te.mean(axis=1)[-1], 3))
+assert tr.mean(axis=1)[-1] >= te.mean(axis=1)[-1]
+'''
+caveats = [
+    "Scores are 'higher is better' (accuracy / R^2 by default). For errors use scoring='neg_mean_squared_error' and flip the sign.",
+    "cv=5 for a classifier is StratifiedKFold WITHOUT shuffling; pass cv=KFold(5, shuffle=True, random_state=0) if rows are ordered.",
+    "Plot with matplotlib (mean +/- sd across folds), or use LearningCurveDisplay.from_estimator / ValidationCurveDisplay.",
+]
+see_also = ["cross-val-score", "grid-search-cv", "tree-pruning"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.learning_curve.html"
+
+[[entry]]
+id = "class-imbalance"
+title = "Imbalanced classes: class_weight='balanced' and stratified splits"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.model_selection import StratifiedKFold, train_test_split\nfrom sklearn.linear_model import LogisticRegression"
+call = "LogisticRegression(class_weight='balanced').fit(X_train, y_train)"
+aliases = ["class imbalance", "imbalanced data", "unbalanced classes", "rare events classification", "class weights", "stratified split", "stratified k fold", "oversampling smote", "cost sensitive learning"]
+r = ["caret::trainControl(sampling = 'down')", "ROSE::ROSE", "themis::step_smote", "DMwR::SMOTE", "glm(weights = w)"]
+inputs = "X, y with a rare class; most sklearn classifiers accept class_weight= (or sample_weight in fit)."
+returns = "A classifier whose loss upweights the rare class by n / (n_classes * count)."
+example = '''
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import balanced_accuracy_score, recall_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+
+X, y = make_classification(n_samples=500, n_features=5, weights=[0.92, 0.08], flip_y=0.01, random_state=54)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, stratify=y, random_state=0)
+print("positive rate train/test:", y_train.mean().round(3), y_test.mean().round(3))
+plain = LogisticRegression().fit(X_train, y_train)
+weighted = LogisticRegression(class_weight="balanced").fit(X_train, y_train)
+r_plain = recall_score(y_test, plain.predict(X_test))
+r_weighted = recall_score(y_test, weighted.predict(X_test))
+print("recall of rare class: plain", round(r_plain, 3), "balanced", round(r_weighted, 3))
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+print("CV balanced accuracy:", cross_val_score(weighted, X, y, cv=cv, scoring="balanced_accuracy").mean().round(3))
+print("test balanced accuracy:", round(balanced_accuracy_score(y_test, weighted.predict(X_test)), 3))
+assert r_weighted >= r_plain
+'''
+caveats = [
+    "imbalanced-learn (SMOTE, RandomUnderSampler) is NOT installed here; use class_weight='balanced' or sample_weight=, or change the probability threshold.",
+    "train_test_split does NOT stratify by default: pass stratify=y. cross_val_score with an integer cv on a classifier already uses StratifiedKFold (unshuffled).",
+    "Weighting shifts predicted probabilities away from the true base rate; do not read them as calibrated probabilities.",
+    "Judge with recall / precision / balanced accuracy / PR curves, not plain accuracy.",
+]
+see_also = ["classification-report", "precision-recall-curve", "train-test-split", "cross-val-score"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.utils.class_weight.compute_class_weight.html"

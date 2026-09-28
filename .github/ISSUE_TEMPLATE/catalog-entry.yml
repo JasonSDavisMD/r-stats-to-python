@@ -1,0 +1,31 @@
+name: Request or correct a catalog entry
+description: A statistics task, R function, or Python call that statsbench should cover (or covers incorrectly).
+labels: ["catalog"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Please do not paste homework or exam questions, private data, or patient information.
+  - type: input
+    id: task
+    attributes:
+      label: Task
+      description: What you were trying to do, in your own words.
+      placeholder: "Two-sample test without assuming normality"
+    validations:
+      required: true
+  - type: input
+    id: r
+    attributes:
+      label: R equivalent (if any)
+      placeholder: "wilcox.test"
+  - type: textarea
+    id: python
+    attributes:
+      label: Python call you expected, or the correction
+      description: Library, import, and call. Link the official documentation if you can.
+  - type: input
+    id: query
+    attributes:
+      label: What did you type into `stats find`?
+      placeholder: 'stats find "wilcox"'

@@ -1,13 +1,26 @@
-# pyproject.toml -- single source of truth for the PSL Workbench environment.
-# `uv sync` reads this file, resolves versions into uv.lock, and installs
-# everything (including this project, editable) into ./.venv.
+# pyproject.toml -- single source of truth for the statsbench environment.
+# `uv sync` reads this file, resolves versions into uv.lock, and installs the
+# core libraries plus this project (editable) into ./.venv.
+#   uv sync --extra deep        add one optional add-on (see below)
+#   uv sync --all-extras        add every add-on
+#   uv sync --group lab         add JupyterLab + Jupytext (browser notebooks)
 
 [project]
-name = "psl-workbench"
-version = "0.1.0"
-description = "Python-first, RStudio-like statistical learning workbench for VS Code (CS 598 PSL)."
+name = "statsbench"
+version = "0.2.0"
+description = "Find and use the right Python call for a statistics or machine-learning task: a searchable task-to-library catalog with R equivalents and runnable examples."
 readme = "README.md"
+license = "MIT"
+authors = [{ name = "Jason Davis" }]
 requires-python = ">=3.11"
+keywords = ["statistics", "machine-learning", "r-to-python", "scipy", "statsmodels", "scikit-learn"]
+classifiers = [
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+# Core: the libraries almost every statistics task needs.
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
@@ -20,23 +33,36 @@ dependencies = [
     "ipykernel>=6.29",
 ]
 
+# Optional add-ons: heavier or specialised libraries. Catalog entries that
+# need one say so (`stats show <id>`), and their tests skip when not installed.
+[project.optional-dependencies]
+ml = ["xgboost>=2.0", "lightgbm>=4.0"]           # gradient boosting
+deep = ["torch>=2.3"]                             # PyTorch: tensors, autograd, neural nets
+bayes = ["pymc>=5.10", "arviz>=0.18"]             # Bayesian modelling and diagnostics
+stats-extra = ["pingouin>=0.5", "lifelines>=0.28"]  # effect sizes/ICC; survival analysis
+all = ["statsbench[ml,deep,bayes,stats-extra]"]
+
+[project.urls]
+Homepage = "https://github.com/JasonSDavisMD/r-stats-to-python"
+Documentation = "https://github.com/JasonSDavisMD/r-stats-to-python/tree/main/workbench"
+Issues = "https://github.com/JasonSDavisMD/r-stats-to-python/issues"
+
 [project.scripts]
-# `psl find "inverse logit"` in the activated terminal.
-psl = "psl.finder.cli:main"
+# `stats find "inverse logit"` in a terminal with the environment active.
+stats = "statsbench.finder.cli:main"
 
 [dependency-groups]
-dev = [
-    "pytest>=8",
-    "nbclient>=0.10",
-    "nbformat>=5.10",
-]
+dev = ["pytest>=8", "nbclient>=0.10", "nbformat>=5.10"]
+# Browser IDE: JupyterLab, Jupytext (opens "# %%" .py files as notebooks),
+# and a Git sidebar for saving work to GitHub from inside JupyterLab.
+lab = ["jupyterlab>=4.2", "jupytext>=1.16", "jupyterlab-git>=0.50"]
 
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/psl"]
+packages = ["src/statsbench"]   # includes statsbench/catalog/*.toml as package data
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -12,6 +12,6 @@ WORKBENCH = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="session")
 def catalog():
-    from psl.finder import load_catalog
+    from statsbench.finder import load_catalog
 
-    return load_catalog(WORKBENCH / "catalog")
+    return load_catalog()

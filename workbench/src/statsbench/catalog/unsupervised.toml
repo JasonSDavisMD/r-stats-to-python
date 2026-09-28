@@ -1,0 +1,398 @@
+# Topic: unsupervised -- PCA, clustering (k-means, hierarchical, GMM, DBSCAN), embeddings, distances, factor analysis.
+# Key distinction: there is no y; scaling and random starts change the answer, and cluster labels are arbitrary names.
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "pca"
+title = "Principal component analysis (PCA): explained variance and loadings"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.decomposition import PCA\nfrom sklearn.preprocessing import StandardScaler"
+call = "PCA().fit(StandardScaler().fit_transform(X))"
+aliases = ["pca", "principal component analysis", "principal components", "pca loadings", "explained variance ratio", "proportion of variance explained", "scree plot", "dimension reduction", "biplot", "pc scores"]
+r = ["prcomp", "princomp", "summary(prcomp(...))"]
+inputs = "X (n, p) numeric matrix; standardize first to match prcomp(scale. = TRUE)."
+returns = "Fitted estimator: .explained_variance_ratio_, .components_ (rows = PCs, i.e. t(rotation)), .explained_variance_ (sdev^2), .transform(X) = scores (prcomp $x)."
+example = '''
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+rng = np.random.default_rng(21)
+z = rng.normal(size=(200, 1))
+X = np.hstack([z + 0.3 * rng.normal(size=(200, 1)), 2 * z + rng.normal(size=(200, 1)),
+               rng.normal(size=(200, 1)) * 10])
+Xs = StandardScaler().fit_transform(X)          # prcomp(X, scale. = TRUE)
+pca = PCA().fit(Xs)
+print("PVE:", pca.explained_variance_ratio_.round(3))
+print("cumulative:", np.cumsum(pca.explained_variance_ratio_).round(3))
+loadings = pca.components_.T                     # columns = PC1, PC2, ... like prcomp $rotation
+print("loadings:\n", loadings.round(3))
+scores = pca.transform(Xs)                       # prcomp $x
+print("scores shape:", scores.shape)
+assert np.isclose(pca.explained_variance_ratio_.sum(), 1.0)
+'''
+caveats = [
+    "PCA() only CENTERS. prcomp(scale. = TRUE) also scales to unit variance: run StandardScaler first (or put both in a Pipeline).",
+    "Explained variance ratios and loadings match prcomp(scale. = TRUE); absolute variances differ by n/(n-1) because StandardScaler uses ddof=0 while R scale() uses n - 1.",
+    ".components_ is (n_components, p): rows are PCs, so loadings = pca.components_.T matches prcomp()$rotation.",
+    "Signs of loadings/scores are arbitrary and can differ from R (sign indeterminacy); compare up to a sign flip per component.",
+    "prcomp's sdev = np.sqrt(pca.explained_variance_). There is no biplot() built in; draw it with matplotlib.",
+]
+see_also = ["standard-scaler", "factor-analysis", "tsne", "kmeans"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html"
+
+[[entry]]
+id = "kmeans"
+title = "K-means clustering"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.cluster import KMeans"
+call = "KMeans(n_clusters=3, n_init=20, random_state=0).fit(X)"
+aliases = ["k means", "k-means clustering", "kmeans cluster", "partitioning clustering", "within cluster sum of squares", "cluster centers", "nstart"]
+r = ["kmeans", "stats::kmeans"]
+inputs = "X (n, p) numeric; usually standardized."
+returns = "Fitted estimator: .labels_ (0-based), .cluster_centers_, .inertia_ (= R tot.withinss), .predict(new_X)."
+example = '''
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.datasets import make_blobs
+
+X, truth = make_blobs(n_samples=300, centers=3, cluster_std=1.0, random_state=22)
+km = KMeans(n_clusters=3, n_init=20, random_state=0).fit(X)   # kmeans(X, 3, nstart = 20)
+print("centers:\n", km.cluster_centers_.round(2))
+print("tot.withinss:", round(km.inertia_, 2))
+print("sizes:", np.bincount(km.labels_))
+assert len(set(km.labels_)) == 3
+'''
+caveats = [
+    "Set n_init explicitly (R's nstart). The default n_init='auto' runs k-means++ ONCE; R's kmeans default nstart = 1 with random starts.",
+    "R's default algorithm is Hartigan-Wong; sklearn uses Lloyd (algorithm='lloyd') with k-means++ seeding. Results usually agree with enough restarts.",
+    "inertia_ is R's tot.withinss. R's betweenss / totss has no attribute: compute totss = ((X - X.mean(0))**2).sum().",
+    "Labels are 0-based and arbitrary; compare clusterings with a crosstab or adjusted_rand_score, not label equality.",
+    "Scale the columns first (StandardScaler) if they are in different units.",
+]
+see_also = ["silhouette-score", "gaussian-mixture", "hierarchical-clustering", "pca"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html"
+
+[[entry]]
+id = "hierarchical-clustering"
+title = "Hierarchical clustering with a dendrogram and cutting the tree"
+kind = "fit"
+library = "SciPy"
+import = "from scipy.cluster.hierarchy import dendrogram, fcluster, linkage"
+call = "Z = linkage(X, method='complete'); fcluster(Z, t=3, criterion='maxclust')"
+aliases = ["hierarchical clustering", "dendrogram", "cut tree", "agglomerative dendrogram", "complete linkage", "average linkage", "single linkage", "ward linkage", "hclust dendrogram"]
+r = ["hclust", "cutree", "plot(hclust(...))", "as.dendrogram"]
+inputs = "Raw observations X (n, p), or a condensed distance vector from pdist (R's dist object)."
+returns = "linkage: Z matrix (n-1, 4) = merges and heights (hclust $merge/$height); fcluster: 1-based cluster labels (cutree); dendrogram draws on the current axes."
+example = '''
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
+from scipy.spatial.distance import pdist
+from sklearn.datasets import make_blobs
+
+X, _ = make_blobs(n_samples=40, centers=3, random_state=23)
+Z = linkage(pdist(X), method="complete")          # hclust(dist(X), method = "complete")
+labels = fcluster(Z, t=3, criterion="maxclust")   # cutree(hc, k = 3)
+print("sizes:", np.bincount(labels)[1:])
+by_height = fcluster(Z, t=5.0, criterion="distance")  # cutree(hc, h = 5)
+print("clusters at h=5:", by_height.max())
+fig, ax = plt.subplots(figsize=(8, 4))
+dendrogram(Z, ax=ax, color_threshold=Z[-3, 2] + 1e-9)
+ax.set_ylabel("height")
+plt.close(fig)
+assert labels.max() == 3
+'''
+caveats = [
+    "METHOD NAMES: scipy method='ward' on raw X (or Euclidean pdist) equals R's hclust(method = 'ward.D2'); R's 'ward.D' (the old default 'ward') squares nothing and differs.",
+    "scipy's default method is 'single'; R's hclust default is 'complete'. Always pass method=.",
+    "'centroid', 'median' and 'ward' require Euclidean distances. Passing a 2-D array is treated as observations, not as a distance matrix: convert a square matrix with squareform() first.",
+    "fcluster labels start at 1 like cutree, but numbering can differ from R's. The dendrogram leaf order can also differ.",
+]
+see_also = ["agglomerative-clustering", "distance-matrix", "kmeans", "silhouette-score"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html"
+
+[[entry]]
+id = "agglomerative-clustering"
+title = "Agglomerative (hierarchical) clustering as a scikit-learn estimator"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.cluster import AgglomerativeClustering"
+call = "AgglomerativeClustering(n_clusters=3, linkage='average').fit(X)"
+aliases = ["agglomerative clustering sklearn", "hierarchical clustering sklearn", "bottom up clustering", "connectivity constrained clustering", "distance threshold clustering"]
+r = ["cutree(hclust(dist(X)), k = 3)"]
+inputs = "X (n, p), or a square distance matrix with metric='precomputed' (not with ward)."
+returns = "Fitted estimator: .labels_ (0-based), .n_clusters_, .children_ (merge tree); .distances_ if compute_distances=True."
+example = '''
+import numpy as np
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.datasets import make_blobs
+from sklearn.metrics import adjusted_rand_score
+
+X, truth = make_blobs(n_samples=150, centers=3, random_state=24)
+agg = AgglomerativeClustering(n_clusters=3, linkage="average").fit(X)
+print("sizes:", np.bincount(agg.labels_))
+cut = AgglomerativeClustering(n_clusters=None, distance_threshold=10.0, linkage="ward").fit(X)
+print("clusters below height 10 (ward):", cut.n_clusters_)
+ari = adjusted_rand_score(truth, agg.labels_)
+print("ARI vs truth:", round(ari, 3))
+assert ari > 0.9
+'''
+caveats = [
+    "Default linkage is 'ward' (R hclust default is 'complete'); sklearn's ward = R's 'ward.D2'.",
+    "No dendrogram plot or predict() for new points. For a dendrogram use scipy linkage + dendrogram.",
+    "Use metric= (the old affinity= parameter was removed). metric='precomputed' needs linkage other than 'ward'.",
+]
+see_also = ["hierarchical-clustering", "kmeans", "dbscan"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.AgglomerativeClustering.html"
+
+[[entry]]
+id = "gaussian-mixture"
+title = "Gaussian mixture model clustering, choosing k by BIC"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.mixture import GaussianMixture"
+call = "GaussianMixture(n_components=3, covariance_type='full', n_init=5, random_state=0).fit(X)"
+aliases = ["gaussian mixture", "mixture model", "gmm", "model based clustering", "em algorithm clustering", "soft clustering", "bic number of clusters", "mixture of normals"]
+r = ["mclust::Mclust", "Mclust", "mixtools::normalmixEM"]
+inputs = "X (n, p) numeric."
+returns = "Fitted estimator: .weights_, .means_, .covariances_, .predict (hard labels), .predict_proba (responsibilities), .bic(X), .aic(X)."
+example = '''
+import numpy as np
+from sklearn.datasets import make_blobs
+from sklearn.mixture import GaussianMixture
+
+X, _ = make_blobs(n_samples=300, centers=3, cluster_std=[1.0, 1.5, 0.5], random_state=25)
+bic = {}
+for k in range(1, 6):
+    gm = GaussianMixture(n_components=k, covariance_type="full", n_init=3, random_state=0).fit(X)
+    bic[k] = gm.bic(X)
+best_k = min(bic, key=bic.get)                      # LOWER BIC is better in sklearn
+print({k: round(v, 1) for k, v in bic.items()}, "best k:", best_k)
+gm = GaussianMixture(n_components=best_k, n_init=3, random_state=0).fit(X)
+print("weights:", gm.weights_.round(3))
+print("responsibilities, first row:", gm.predict_proba(X[:1]).round(3))
+assert best_k == 3
+'''
+caveats = [
+    "BIC SIGN: sklearn's .bic() is -2 logL + k log n (smaller is better); mclust reports 2 logL - k log n (larger is better).",
+    "mclust searches many covariance models (VVV, EII, ...) automatically; sklearn has four covariance_type values ('full', 'tied', 'diag', 'spherical') and you loop over them and k yourself.",
+    "Default n_init=1 and k-means initialization; set n_init > 1 and random_state to avoid poor local optima.",
+]
+see_also = ["kmeans", "silhouette-score", "dbscan"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.mixture.GaussianMixture.html"
+
+[[entry]]
+id = "dbscan"
+title = "DBSCAN density-based clustering with noise points"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.cluster import DBSCAN"
+call = "DBSCAN(eps=0.5, min_samples=5).fit(X)"
+aliases = ["density based clustering", "dbscan clustering", "noise points outliers clustering", "arbitrary shape clusters", "hdbscan"]
+r = ["dbscan::dbscan", "fpc::dbscan"]
+inputs = "X (n, p), usually standardized; eps = neighbourhood radius, min_samples = MinPts."
+returns = "Fitted estimator: .labels_ (-1 = noise), .core_sample_indices_."
+example = '''
+import numpy as np
+from sklearn.cluster import DBSCAN
+from sklearn.datasets import make_moons
+from sklearn.preprocessing import StandardScaler
+
+X, _ = make_moons(n_samples=300, noise=0.06, random_state=26)
+Xs = StandardScaler().fit_transform(X)
+db = DBSCAN(eps=0.3, min_samples=5).fit(Xs)
+labels = db.labels_
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+print("clusters:", n_clusters, "noise points:", int(np.sum(labels == -1)))
+assert n_clusters == 2
+'''
+caveats = [
+    "Noise is labelled -1 (R dbscan uses cluster 0 for noise).",
+    "min_samples COUNTS THE POINT ITSELF, same as dbscan::dbscan's minPts.",
+    "No predict() for new points. sklearn.cluster.HDBSCAN is available when a single eps is hard to choose.",
+    "Choose eps from a k-distance plot (NearestNeighbors) like dbscan::kNNdistplot.",
+]
+see_also = ["kmeans", "gaussian-mixture", "agglomerative-clustering"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html"
+
+[[entry]]
+id = "silhouette-score"
+title = "Silhouette score for choosing the number of clusters"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.metrics import silhouette_samples, silhouette_score"
+call = "silhouette_score(X, labels)"
+aliases = ["silhouette", "choose number of clusters", "how many clusters", "optimal k", "cluster validation", "elbow method", "average silhouette width"]
+r = ["cluster::silhouette", "factoextra::fviz_nbclust"]
+inputs = "X (n, p) (or a distance matrix with metric='precomputed') and cluster labels (at least 2 distinct)."
+returns = "silhouette_score: mean silhouette width (float in [-1, 1]); silhouette_samples: one value per point."
+example = '''
+from sklearn.cluster import KMeans
+from sklearn.datasets import make_blobs
+from sklearn.metrics import silhouette_samples, silhouette_score
+
+X, _ = make_blobs(n_samples=300, centers=4, cluster_std=0.8, random_state=3)
+scores, inertia = {}, {}
+for k in range(2, 8):
+    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)
+    scores[k] = silhouette_score(X, km.labels_)
+    inertia[k] = km.inertia_                       # for an elbow plot
+best_k = max(scores, key=scores.get)
+print({k: round(s, 3) for k, s in scores.items()}, "best k:", best_k)
+per_point = silhouette_samples(X, KMeans(n_clusters=best_k, n_init=10, random_state=0).fit_predict(X))
+print("min / mean per-point silhouette:", per_point.min().round(3), per_point.mean().round(3))
+assert best_k == 4
+'''
+caveats = [
+    "Needs 2 <= k <= n - 1; the silhouette is undefined for k = 1.",
+    "When clusters touch, the silhouette often prefers too FEW clusters (e.g. k = 2); look at the whole curve, the elbow (inertia_) and GMM BIC, not only the argmax.",
+    "silhouette_score = mean of silhouette_samples = R's summary(silhouette(...))$avg.width.",
+    "Pass metric='precomputed' with a square distance matrix to reuse the dist you clustered on.",
+]
+see_also = ["kmeans", "hierarchical-clustering", "gaussian-mixture"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html"
+
+[[entry]]
+id = "tsne"
+title = "t-SNE embedding for visualizing high-dimensional data"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.manifold import TSNE"
+call = "TSNE(n_components=2, perplexity=30, random_state=0).fit_transform(X)"
+aliases = ["t-sne", "t sne", "tsne plot", "nonlinear embedding", "2d embedding", "manifold learning", "umap"]
+r = ["Rtsne::Rtsne", "Rtsne"]
+inputs = "X (n, p); perplexity must be < n."
+returns = "Array (n, 2) of embedded coordinates; the fitted object has .kl_divergence_."
+example = '''
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_digits
+from sklearn.manifold import TSNE
+
+digits = load_digits()
+X, y = digits.data[:200], digits.target[:200]
+emb = TSNE(n_components=2, perplexity=20, random_state=0).fit_transform(X)
+print("embedding shape:", emb.shape)
+fig, ax = plt.subplots()
+ax.scatter(emb[:, 0], emb[:, 1], c=y, cmap="tab10", s=10)
+plt.close(fig)
+assert emb.shape == (200, 2)
+'''
+caveats = [
+    "Visualization only: no transform() for new points, and distances between clusters / cluster sizes are not meaningful.",
+    "Rtsne runs PCA to 50 dims first (pca = TRUE) and defaults to init random; sklearn defaults to init='pca' and no pre-reduction. Run PCA(50) yourself for wide data.",
+    "The iteration argument is max_iter (older code used n_iter, since removed). Results depend on random_state and perplexity.",
+    "UMAP is not in scikit-learn (separate umap-learn package).",
+]
+see_also = ["pca", "classical-mds"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html"
+
+[[entry]]
+id = "distance-matrix"
+title = "Distance matrix between observations (Euclidean, Manhattan, correlation...)"
+kind = "compute"
+library = "SciPy"
+import = "from scipy.spatial.distance import pdist, squareform"
+call = "squareform(pdist(X, metric='euclidean'))"
+aliases = ["distance matrix", "pairwise distances", "dissimilarity matrix", "euclidean distance", "manhattan distance", "cdist", "gower distance"]
+r = ["dist", "as.matrix(dist(X))", "proxy::dist", "cluster::daisy"]
+inputs = "X (n, p); metric='euclidean', 'cityblock' (manhattan), 'minkowski', 'correlation', 'cosine', ..."
+returns = "pdist: condensed vector of n(n-1)/2 distances (like an R dist object); squareform: full (n, n) matrix."
+example = '''
+import numpy as np
+from scipy.spatial.distance import cdist, pdist, squareform
+
+rng = np.random.default_rng(28)
+X = rng.normal(size=(5, 3))
+d = pdist(X, metric="euclidean")          # dist(X)
+D = squareform(d)                         # as.matrix(dist(X))
+print(D.round(2))
+manhattan = squareform(pdist(X, metric="cityblock"))   # dist(X, method = "manhattan")
+print("d(0,1) manhattan:", manhattan[0, 1].round(3))
+to_centers = cdist(X, X[:2])              # distances from each row to 2 reference points
+print(to_centers.shape)
+assert np.isclose(D[0, 1], np.linalg.norm(X[0] - X[1]))
+'''
+caveats = [
+    "R method = 'manhattan' is metric='cityblock' in scipy; 'maximum' is 'chebyshev'.",
+    "metric='correlation' is 1 - r (a distance), not r.",
+    "Gower distance for mixed data (cluster::daisy) is not in scipy; encode/scale yourself or use a third-party package.",
+    "sklearn.metrics.pairwise_distances returns the square matrix directly and accepts the same metric names.",
+]
+see_also = ["hierarchical-clustering", "classical-mds"]
+docs = "https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.distance.pdist.html"
+
+[[entry]]
+id = "classical-mds"
+title = "Multidimensional scaling (classical / metric MDS) from a distance matrix"
+kind = "compute"
+library = "scikit-learn"
+import = "from sklearn.manifold import MDS, ClassicalMDS"
+call = "ClassicalMDS(n_components=2, metric='precomputed').fit_transform(D)"
+aliases = ["multidimensional scaling", "mds", "principal coordinates analysis", "pcoa", "classical scaling", "nonmetric mds", "smacof"]
+r = ["cmdscale", "MASS::isoMDS", "smacof::smacofSym"]
+inputs = "Square symmetric distance matrix D (n, n) with metric='precomputed', or raw X (Euclidean by default)."
+returns = "Array (n, n_components) of coordinates; MDS also has .stress_."
+example = '''
+import numpy as np
+from scipy.spatial.distance import pdist, squareform
+from sklearn.manifold import MDS, ClassicalMDS
+
+rng = np.random.default_rng(29)
+X = rng.normal(size=(30, 4))
+D = squareform(pdist(X))
+coords = ClassicalMDS(n_components=2, metric="precomputed").fit_transform(D)  # cmdscale(D, k = 2)
+print("classical MDS:", coords.shape)
+smacof = MDS(n_components=2, metric="precomputed", init="classical_mds", random_state=0)
+coords2 = smacof.fit_transform(D)                                         # metric stress MDS
+print("stress:", round(smacof.stress_, 4))
+nonmetric = MDS(n_components=2, metric="precomputed", metric_mds=False, init="random",
+                n_init=4, random_state=0).fit_transform(D)                 # MASS::isoMDS
+print(nonmetric.shape)
+assert coords.shape == (30, 2)
+'''
+caveats = [
+    "cmdscale is ClassicalMDS (eigen-decomposition, scikit-learn >= 1.8). MDS is iterative SMACOF stress minimization, a different method.",
+    "PARAMETER RENAMES in scikit-learn 1.8+: dissimilarity='precomputed' -> metric='precomputed'; the old boolean metric -> metric_mds (False = non-metric, like isoMDS).",
+    "MDS: pass init= ('classical_mds' or 'random') explicitly to avoid a FutureWarning; n_init now defaults to 1.",
+    "Coordinates are defined only up to rotation/reflection; signs can differ from R.",
+]
+see_also = ["distance-matrix", "pca", "tsne"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.manifold.ClassicalMDS.html"
+
+[[entry]]
+id = "factor-analysis"
+title = "Exploratory factor analysis with varimax rotation"
+kind = "fit"
+library = "scikit-learn"
+import = "from sklearn.decomposition import FactorAnalysis\nfrom sklearn.preprocessing import StandardScaler"
+call = "FactorAnalysis(n_components=2, rotation='varimax').fit(StandardScaler().fit_transform(X))"
+aliases = ["factor analysis", "latent factors", "factor loadings", "varimax", "uniquenesses", "exploratory factor analysis", "efa"]
+r = ["factanal", "psych::fa"]
+inputs = "X (n, p); standardize to get loadings on the correlation scale like factanal."
+returns = "Fitted estimator: .components_ (factors x variables; loadings = .components_.T), .noise_variance_ (uniquenesses), .transform(X) = factor scores, .score(X) = avg log-likelihood."
+example = '''
+import numpy as np
+from sklearn.decomposition import FactorAnalysis
+from sklearn.preprocessing import StandardScaler
+
+rng = np.random.default_rng(30)
+F = rng.normal(size=(400, 2))
+L = np.array([[0.9, 0], [0.8, 0], [0.7, 0], [0, 0.9], [0, 0.8], [0, 0.7]])
+X = F @ L.T + 0.5 * rng.normal(size=(400, 6))
+Xs = StandardScaler().fit_transform(X)
+fa = FactorAnalysis(n_components=2, rotation="varimax", random_state=0).fit(Xs)
+loadings = fa.components_.T
+print("loadings:\n", loadings.round(2))
+print("uniquenesses:", fa.noise_variance_.round(2))
+assert np.all(np.abs(loadings).max(axis=1) > 0.5)
+'''
+caveats = [
+    "Default rotation=None; factanal defaults to varimax. Pass rotation='varimax' (or 'quartimax'). No promax/oblimin (use the factor_analyzer package).",
+    "No chi-square test of 'k factors are sufficient' and no p-value, unlike factanal's printout; compare models with .score(X) (log-likelihood) instead.",
+    "Fit on standardized data to get loadings on the correlation scale; loading signs and factor order can differ from R.",
+]
+see_also = ["pca", "standard-scaler"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.FactorAnalysis.html"

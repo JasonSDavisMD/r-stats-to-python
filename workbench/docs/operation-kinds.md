@@ -12,7 +12,7 @@ the library.
 | **compute** | Reshape, clean, summarize or transform data; no model | pandas, NumPy | `df.groupby("g")["y"].mean()` |
 | **visualize** | Draw data or an already-computed result | Matplotlib, seaborn | `ax.contour(xx, yy, log_odds, levels=[0])` |
 
-`psl kinds` prints this list. `psl find "<task>" --kind evaluate` narrows a search.
+`stats kinds` prints this list. `stats find "<task>" --kind evaluate` narrows a search.
 
 ## The mistakes this prevents
 

@@ -1,6 +1,6 @@
 """The environment check passes inside the project .venv."""
 
-from psl import envcheck
+from statsbench import envcheck
 
 
 def test_all_checks_pass():

@@ -1,6 +1,6 @@
 """CLI behaviour: exit codes and the key lines a user relies on."""
 
-from psl.finder.cli import main
+from statsbench.finder.cli import main
 
 
 def test_find_prints_import_and_docs(capsys):

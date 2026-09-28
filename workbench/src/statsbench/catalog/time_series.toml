@@ -1,0 +1,415 @@
+# Topic: time_series -- date indexes, lags/rolling windows, ACF/PACF, stationarity tests, decomposition, ARIMA/SARIMAX/ETS forecasting (pandas, statsmodels).
+# Key distinction: pandas MANIPULATES time-indexed data (resample, rolling, shift) vs statsmodels.tsa MODELS and TESTS it (acf, adfuller, ARIMA, forecast).
+# Schema and how to add entries: docs/adding-a-topic.md
+
+[[entry]]
+id = "ts-datetime-index"
+title = "Build a dated time series and resample it (daily to monthly etc.)"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "pd.Series(values, index=pd.date_range('2024-01-01', periods=n, freq='D')).resample('ME').mean()"
+aliases = ["time series", "time series object", "date range", "date index", "datetimeindex", "parse dates", "to_datetime", "resample", "aggregate daily to monthly", "monthly average", "convert to monthly", "ts object", "frequency", "downsample time series"]
+r = ["ts", "as.Date", "seq.Date", "xts::apply.monthly", "lubridate::floor_date", "aggregate.ts"]
+inputs = "Values plus a DatetimeIndex (pd.date_range(start, periods=, freq=) or pd.to_datetime(strings)); a frequency alias for resample ('W', 'ME', 'QE', 'YE', 'h')."
+returns = "Series/DataFrame indexed by DatetimeIndex; resample(...).mean()/.sum() returns one row per period."
+example = '''
+import numpy as np
+import pandas as pd
+
+rng = np.random.default_rng(30)
+days = pd.date_range("2024-01-01", periods=366, freq="D")          # R: seq(as.Date("2024-01-01"), by = "day", length.out = 366)
+sales = pd.Series(100 + rng.normal(scale=5, size=days.size).cumsum(), index=days, name="sales")
+
+monthly_mean = sales.resample("ME").mean()          # month-END labels; "MS" gives month-start labels
+weekly_total = sales.resample("W").sum()
+print(monthly_mean.head(3).round(2))
+print(len(monthly_mean), "months,", len(weekly_total), "weeks")
+
+parsed = pd.to_datetime(["2024-03-01", "2024-03-15"])             # R: as.Date(...)
+print(sales.loc[parsed[0]:parsed[1]].shape)                       # date-range slicing is inclusive
+assert len(monthly_mean) == 12
+'''
+caveats = [
+    "pandas 3 frequency aliases: month-end is 'ME' (not 'M'), quarter-end 'QE', year-end 'YE', hourly 'h', minutely 'min'; the old uppercase 'M'/'H' aliases now raise an error.",
+    "Unlike R's ts(frequency = 12), a pandas Series carries real dates; statsmodels reads the seasonal period from index.freq (or you pass period=12).",
+    "resample('ME') labels each bin by its LAST day; use 'MS' for first-day labels. Label/closed defaults differ between frequencies ('W' bins end on Sunday).",
+]
+see_also = ["ts-rolling-lag-diff", "df-groupby", "read-csv"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.resample.html"
+
+[[entry]]
+id = "ts-rolling-lag-diff"
+title = "Lags, differences and rolling (moving) averages of a time series"
+kind = "compute"
+library = "pandas"
+import = "import pandas as pd"
+call = "series.shift(1) ; series.diff() ; series.rolling(window=7).mean()"
+aliases = ["lag", "lagged variable", "shift", "difference a time series", "first difference", "diff", "moving average", "rolling mean", "rolling window", "rollmean", "percent change", "lead", "rollapply", "sliding window"]
+r = ["dplyr::lag", "stats::lag", "diff", "zoo::rollmean", "zoo::rollapply", "stats::filter", "dplyr::lead"]
+inputs = "Series/DataFrame (ideally with a DatetimeIndex); periods for shift/diff; window size (int or offset like '7D') for rolling."
+returns = "Series of the same length, with NaN where the lag/window is not yet available."
+example = '''
+import numpy as np
+import pandas as pd
+
+rng = np.random.default_rng(31)
+dates = pd.date_range("2024-01-01", periods=30, freq="D")
+visitors = pd.Series(200 + rng.normal(scale=10, size=30).cumsum(), index=dates)
+
+frame = pd.DataFrame({
+    "visitors": visitors,
+    "lag_1": visitors.shift(1),                           # R: dplyr::lag(x, 1)
+    "diff_1": visitors.diff(),                            # R: c(NA, diff(x))
+    "ma_7": visitors.rolling(window=7).mean(),            # trailing 7-day mean
+    "ma_7_centered": visitors.rolling(7, center=True).mean(),   # R: zoo::rollmean(x, 7, fill = NA)
+    "pct_change": visitors.pct_change(),
+})
+print(frame.head(8).round(2))
+assert np.isclose(frame["diff_1"].iloc[5], visitors.iloc[5] - visitors.iloc[4])
+'''
+caveats = [
+    "Output keeps the original length with leading NaN; R's diff() returns a SHORTER vector. Use .dropna() to match.",
+    "series.shift(1) is dplyr::lag (value from the previous period). stats::lag(x, 1) on a ts is the OPPOSITE direction (a lead) -- use shift(-1) for that.",
+    "rolling() is right-aligned (trailing window) by default; zoo::rollmean defaults to align = 'center' (use center=True). The first window-1 values are NaN unless min_periods is set.",
+    "shift on a Series shifts VALUES along a fixed index; to shift the dates instead use series.shift(1, freq='D').",
+]
+see_also = ["ts-datetime-index", "acf-pacf"]
+docs = "https://pandas.pydata.org/docs/reference/api/pandas.Series.rolling.html"
+
+[[entry]]
+id = "acf-pacf"
+title = "Autocorrelation (ACF) and partial autocorrelation (PACF): values and plots"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.tsa.stattools import acf, pacf\nfrom statsmodels.graphics.tsaplots import plot_acf, plot_pacf"
+call = "acf(x, nlags=20) ; pacf(x, nlags=20, method='ywm') ; plot_acf(x, lags=20, ax=ax)"
+aliases = ["acf", "pacf", "autocorrelation", "partial autocorrelation", "autocorrelation function", "correlogram", "acf plot", "autocorrelation plot", "serial correlation", "identify arima order"]
+r = ["acf", "pacf", "forecast::ggAcf", "forecast::Acf"]
+inputs = "1-D array or Series; nlags; alpha=0.05 to also return confidence intervals."
+returns = "acf/pacf: array of length nlags+1 starting at lag 0 (value 1.0); with alpha=, a tuple (values, confint). plot_* return a matplotlib Figure."
+example = '''
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.stattools import acf, pacf
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+rng = np.random.default_rng(32)
+n = 500
+ar1_series = np.zeros(n)
+for t in range(1, n):
+    ar1_series[t] = 0.7 * ar1_series[t - 1] + rng.normal()
+
+acf_values = acf(ar1_series, nlags=10)
+pacf_values = pacf(ar1_series, nlags=10, method="ywm")      # same estimator as R's pacf()
+print("ACF lags 0-3: ", acf_values[:4].round(3))
+print("PACF lags 1-3:", pacf_values[1:4].round(3))
+
+fig, axes = plt.subplots(1, 2, figsize=(9, 3))
+plot_acf(ar1_series, lags=20, ax=axes[0])
+plot_pacf(ar1_series, lags=20, method="ywm", ax=axes[1])
+plt.close(fig)
+assert abs(acf_values[1] - 0.7) < 0.1 and abs(pacf_values[2]) < 0.15
+'''
+caveats = [
+    "Both return lag 0 as the first element; R's pacf starts at lag 1, so pacf_values[1] is R's first PACF value.",
+    "pacf's default method is 'ywadjusted' (denominator n - k); R's pacf corresponds to method='ywm' (or 'ldb'). Values differ slightly at high lags.",
+    "plot_acf's shaded band uses Bartlett's formula (widens with lag, like R's ci.type = 'ma'); R's default dashed lines are the white-noise +/- 1.96/sqrt(n). plot_acf includes lag 0 by default (zero=True), like R's acf plot.",
+    "nlags default is min(10*log10(n), n-1), matching R's lag.max default.",
+]
+see_also = ["ljung-box", "arima", "stationarity-tests"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.acf.html"
+
+[[entry]]
+id = "stationarity-tests"
+title = "Stationarity / unit-root tests: augmented Dickey-Fuller (ADF) and KPSS"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.tsa.stattools import adfuller, kpss"
+call = "adfuller(x, regression='c', autolag='AIC', result_object=True).pvalue ; kpss(x, regression='c', nlags='auto', result_object=True).pvalue"
+aliases = ["adf test", "augmented dickey fuller", "dickey fuller test", "unit root test", "kpss test", "stationarity test", "is my time series stationary", "test for stationarity", "adf.test", "kpss.test"]
+r = ["tseries::adf.test", "tseries::kpss.test", "urca::ur.df", "urca::ur.kpss", "forecast::ndiffs"]
+inputs = "1-D array or Series; regression='c' (constant) or 'ct' (constant + trend)."
+returns = "With result_object=True: ADFullerResult / KPSSResult with .statistic, .pvalue, .lags, .critical_values (ADF also .nobs, .icbest). Without it: a plain tuple (deprecated)."
+example = '''
+import warnings
+import numpy as np
+from statsmodels.tools.sm_exceptions import InterpolationWarning
+from statsmodels.tsa.stattools import adfuller, kpss
+
+rng = np.random.default_rng(33)
+random_walk = rng.normal(size=400).cumsum()           # unit root (non-stationary)
+stationary_noise = rng.normal(size=400)
+
+for name, series in [("random walk", random_walk), ("white noise", stationary_noise)]:
+    adf = adfuller(series, regression="c", autolag="AIC", result_object=True)
+    with warnings.catch_warnings():
+        # KPSS p-values come from a table; outside [0.01, 0.10] you get a bound + InterpolationWarning (R warns too)
+        warnings.simplefilter("ignore", InterpolationWarning)
+        kpss_res = kpss(series, regression="c", nlags="auto", result_object=True)
+    print(f"{name:12s} ADF = {adf.statistic:.2f}, p = {adf.pvalue:.3f} (H0: unit root)   "
+          f"KPSS p = {kpss_res.pvalue:.3f} (H0: stationary)")
+
+assert adfuller(random_walk, result_object=True).pvalue > 0.05
+assert adfuller(stationary_noise, result_object=True).pvalue < 0.01
+'''
+caveats = [
+    "statsmodels 0.15: calling adfuller/kpss without result_object= raises a FutureWarning (tuple return is deprecated). Pass result_object=True and read .statistic / .pvalue.",
+    "Opposite null hypotheses: ADF H0 = unit root (small p => stationary); KPSS H0 = stationary (small p => NOT stationary).",
+    "tseries::adf.test ALWAYS includes a constant + linear trend and uses k = trunc((n-1)^(1/3)) lags; adfuller defaults to regression='c' with the lag chosen by AIC. To mimic adf.test use adfuller(x, regression='ct', maxlag=k, autolag=None, result_object=True).",
+    "kpss default regression='c' matches kpss.test(null = 'Level'); use 'ct' for null = 'Trend'. KPSS p-values are truncated to [0.01, 0.10] with an InterpolationWarning, as in R.",
+]
+see_also = ["acf-pacf", "arima", "ts-rolling-lag-diff"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html"
+
+[[entry]]
+id = "stl-decompose"
+title = "Seasonal decomposition of a time series into trend, seasonal and remainder (STL)"
+kind = "compute"
+library = "statsmodels"
+import = "from statsmodels.tsa.seasonal import STL, seasonal_decompose"
+call = "STL(series, period=12, robust=True).fit() ; seasonal_decompose(series, model='additive', period=12)"
+aliases = ["stl", "seasonal decomposition", "decompose time series", "trend and seasonality", "seasonal adjustment", "deseasonalize", "loess decomposition", "classical decomposition", "seasonal_decompose"]
+r = ["stl", "decompose", "forecast::mstl"]
+inputs = "Series with a DatetimeIndex that has a freq (period inferred) or an array plus period=; robust=True for outlier-resistant fitting."
+returns = "DecomposeResult with .trend, .seasonal, .resid (and .observed); .plot() draws the 4-panel figure."
+example = '''
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import STL, seasonal_decompose
+
+rng = np.random.default_rng(34)
+months = pd.date_range("2015-01-31", periods=120, freq="ME")
+month_number = np.arange(120)
+airline = pd.Series(100 + 0.5 * month_number + 10 * np.sin(2 * np.pi * month_number / 12)
+                    + rng.normal(scale=2, size=120), index=months)
+
+stl_result = STL(airline, period=12, robust=True).fit()          # R: stl(x, s.window = 7, robust = TRUE)
+print(stl_result.seasonal.iloc[:12].round(2).to_numpy())
+print("trend change over 10 years:", round(stl_result.trend.iloc[-1] - stl_result.trend.iloc[0], 1))
+
+classical = seasonal_decompose(airline, model="additive", period=12)   # R: decompose(x)
+print("classical trend NaNs at the ends:", int(classical.trend.isna().sum()))
+
+fig = stl_result.plot()
+plt.close(fig)
+assert np.allclose(stl_result.trend + stl_result.seasonal + stl_result.resid, airline)
+'''
+caveats = [
+    "R's stl REQUIRES s.window (e.g. 'periodic' or 7); STL's seasonal= smoother length defaults to 7. There is no 'periodic' keyword: use a large odd seasonal (e.g. 999) to approximate it.",
+    "Set period=12 explicitly (or give the index a freq); a plain array has no frequency like an R ts object.",
+    "seasonal_decompose (classical, like decompose) leaves NaN in the trend at both ends; STL does not. Use model='multiplicative' for decompose(type = 'multiplicative').",
+]
+see_also = ["ts-datetime-index", "ets-holt-winters", "arima"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.seasonal.STL.html"
+
+[[entry]]
+id = "arima"
+title = "Fit an ARIMA model and forecast with confidence intervals"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.tsa.arima.model import ARIMA"
+call = "ARIMA(series, order=(p, d, q)).fit().get_forecast(steps=12).summary_frame(alpha=0.05)"
+aliases = ["arima", "arima forecast", "forecast time series", "box jenkins", "autoregressive model", "ar model", "ma model", "arma", "time series forecasting", "forecast with prediction interval", "auto.arima"]
+r = ["arima", "forecast::Arima", "forecast::forecast", "predict.Arima", "forecast::auto.arima"]
+inputs = "Series with a DatetimeIndex that has a freq (or a numpy array); order=(p, d, q); trend='c'/'t'/'n'."
+returns = "ARIMAResults: .params, .aic, .summary(), .resid; .get_forecast(steps).summary_frame() -> mean, mean_se, mean_ci_lower, mean_ci_upper."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+
+rng = np.random.default_rng(35)
+n = 200
+values = np.zeros(n)
+for t in range(1, n):
+    values[t] = 0.6 * values[t - 1] + rng.normal()
+series = pd.Series(50 + values, index=pd.date_range("2008-01-31", periods=n, freq="ME"))
+
+model = ARIMA(series, order=(1, 0, 0)).fit()          # R: arima(x, order = c(1, 0, 0))
+print(model.params.round(3))
+print("AIC:", round(model.aic, 1))
+forecast = model.get_forecast(steps=6).summary_frame(alpha=0.05)
+print(forecast.round(2))                              # mean, mean_se, mean_ci_lower, mean_ci_upper
+assert (forecast["mean_ci_lower"] < forecast["mean"]).all()
+'''
+caveats = [
+    "No auto.arima in statsmodels (and pmdarima is not installed here): compare candidate orders by .aic in a small loop over (p, d, q).",
+    "'const' in the output is the process MEAN (like R's 'intercept' in arima), not a regression intercept. With d >= 1 no constant is included (same as R); use trend='t' for drift (forecast::Arima(include.drift = TRUE)).",
+    "Give a DatetimeIndex WITH freq (pd.date_range(..., freq='ME')) or a numpy array; an index without freq triggers ValueWarnings and forecasts get integer labels.",
+    "Estimation is exact MLE via the state-space Kalman filter; R's arima default method='CSS-ML', so estimates can differ in the 3rd decimal.",
+    "sigma2 is reported as a parameter in .params.",
+]
+see_also = ["sarimax-exog", "acf-pacf", "stationarity-tests", "ljung-box", "ets-holt-winters"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html"
+
+[[entry]]
+id = "sarimax-exog"
+title = "Seasonal ARIMA with an exogenous regressor (SARIMAX / regression with ARIMA errors)"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.tsa.statespace.sarimax import SARIMAX"
+call = "SARIMAX(y, exog=X, order=(1, 0, 0), seasonal_order=(1, 0, 0, 12)).fit(disp=False)"
+aliases = ["sarimax", "sarima", "seasonal arima", "arima with covariates", "arimax", "regression with arima errors", "exogenous regressor", "xreg", "dynamic regression"]
+r = ["arima(xreg = )", "forecast::Arima(xreg = )", "arima(seasonal = list(order = c(1, 0, 0), period = 12))"]
+inputs = "Endogenous Series (DatetimeIndex with freq); exog DataFrame/array aligned with it; order=(p,d,q); seasonal_order=(P,D,Q,s)."
+returns = "SARIMAXResults: .params (exog coefs, AR terms, sigma2), .summary(); .get_forecast(steps, exog=future_X) with intervals."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+rng = np.random.default_rng(36)
+n = 144
+months = pd.date_range("2012-01-31", periods=n + 6, freq="ME")
+advertising = pd.Series(rng.normal(size=n + 6), index=months, name="advertising")
+shocks = rng.normal(size=n + 6)
+sarima_errors = np.zeros(n + 6)                            # (1 - 0.5B)(1 - 0.6B^12) e_t = shock_t
+for t in range(n + 6):
+    sarima_errors[t] = (shocks[t] + (0.5 * sarima_errors[t - 1] if t >= 1 else 0)
+                        + (0.6 * sarima_errors[t - 12] if t >= 12 else 0)
+                        - (0.3 * sarima_errors[t - 13] if t >= 13 else 0))
+sales = 20 + 3.0 * advertising + sarima_errors
+
+train_sales, train_ads = sales.iloc[:n], advertising.iloc[:n].to_frame()
+future_ads = advertising.iloc[n:].to_frame()               # exog for the forecast horizon is REQUIRED
+model = SARIMAX(train_sales, exog=train_ads, order=(1, 0, 0),
+                seasonal_order=(1, 0, 0, 12), trend="c").fit(disp=False, maxiter=200)
+print(model.params.round(3))
+forecast = model.get_forecast(steps=6, exog=future_ads).summary_frame()
+print(forecast[["mean", "mean_ci_lower", "mean_ci_upper"]].round(2))
+assert model.mle_retvals["converged"] and abs(model.params["advertising"] - 3.0) < 0.3
+'''
+caveats = [
+    "Forecasting needs future exog values: get_forecast(steps, exog=...) with exactly `steps` rows (R: forecast(fit, xreg = newx)).",
+    "Like R's arima(xreg=), this is regression with ARIMA errors, so the exog coefficient is a regression effect.",
+    "trend='c' adds a constant; the default trend is None (no constant), unlike R's arima which includes a mean when d = 0. SARIMAX's 'intercept' is the constant c of the AR equation, NOT the mean R reports (mean = c / ((1 - phi)(1 - Phi))); ARIMA's 'const' IS the mean.",
+    "The default maxiter=50 often ends in a ConvergenceWarning for seasonal models; use fit(disp=False, maxiter=200) and check .mle_retvals['converged'].",
+]
+see_also = ["arima", "stl-decompose", "time-series-split"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAX.html"
+
+[[entry]]
+id = "ets-holt-winters"
+title = "Exponential smoothing / Holt-Winters forecast with trend and seasonality"
+kind = "fit"
+library = "statsmodels"
+import = "from statsmodels.tsa.holtwinters import ExponentialSmoothing\nfrom statsmodels.tsa.exponential_smoothing.ets import ETSModel"
+call = "ExponentialSmoothing(series, trend='add', seasonal='add', seasonal_periods=12).fit()"
+aliases = ["exponential smoothing", "holt winters", "holt-winters forecast", "ets", "ets model", "simple exponential smoothing", "holt linear trend", "triple exponential smoothing", "error trend seasonal"]
+r = ["HoltWinters", "forecast::ets", "forecast::holt", "forecast::ses", "forecast::hw"]
+inputs = "Series with a DatetimeIndex that has a freq; trend/seasonal = 'add', 'mul' or None; seasonal_periods."
+returns = "HoltWintersResults: .params (smoothing_level, smoothing_trend, smoothing_seasonal), .forecast(h), .sse. ETSModel results add .get_prediction(...).summary_frame() with intervals and .aic."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.exponential_smoothing.ets import ETSModel
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+rng = np.random.default_rng(37)
+months = pd.date_range("2016-01-31", periods=96, freq="ME")
+step = np.arange(96)
+level = 200 + 1.5 * step + rng.normal(scale=3, size=96).cumsum()      # wandering level
+demand = pd.Series(level + 20 * np.sin(2 * np.pi * step / 12) + rng.normal(scale=4, size=96), index=months)
+
+holt_winters = ExponentialSmoothing(demand, trend="add", seasonal="add", seasonal_periods=12).fit()
+print({k: round(float(v), 3) for k, v in holt_winters.params.items() if k.startswith("smoothing")})   # alpha, beta, gamma
+print(holt_winters.forecast(3).round(1))
+
+# ETS state-space version: AIC and prediction intervals (R: forecast(ets(x, model = "AAA"), h = 12))
+ets_fit = ETSModel(demand, error="add", trend="add", seasonal="add", seasonal_periods=12).fit(disp=False)
+intervals = ets_fit.get_prediction(start=96, end=107).summary_frame(alpha=0.05)
+print("ETS AIC:", round(ets_fit.aic, 1))
+print(intervals.head(3).round(1))
+assert (intervals["pi_upper"] > intervals["pi_lower"]).all()
+'''
+caveats = [
+    "No automatic model selection like forecast::ets(): you choose trend/seasonal/damped_trend yourself; compare ETSModel fits by .aic.",
+    "ExponentialSmoothing gives point forecasts only; use ETSModel (or simulate) for prediction intervals.",
+    "Initial states: ExponentialSmoothing defaults to initialization_method='estimated'; R's HoltWinters uses a heuristic start from the first seasons and minimizes SSE, so smoothing parameters differ somewhat.",
+    "Multiplicative seasonality (R: seasonal = 'multiplicative') requires strictly positive data: seasonal='mul'.",
+]
+see_also = ["arima", "stl-decompose", "ts-datetime-index"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.tsa.holtwinters.ExponentialSmoothing.html"
+
+[[entry]]
+id = "ljung-box"
+title = "Ljung-Box test for autocorrelation in residuals (white noise check)"
+kind = "evaluate"
+library = "statsmodels"
+import = "from statsmodels.stats.diagnostic import acorr_ljungbox"
+call = "acorr_ljungbox(residuals, lags=[10], model_df=p + q)"
+aliases = ["ljung box test", "box test", "box pierce", "portmanteau test", "residual autocorrelation test", "white noise test", "box.test", "check residuals arima"]
+r = ["Box.test", "Box.test(type = 'Ljung-Box')", "forecast::checkresiduals"]
+inputs = "Residuals (array/Series); lags = int or list of lags; model_df = number of ARMA parameters (R: fitdf); boxpierce=True adds Box-Pierce."
+returns = "DataFrame indexed by lag with lb_stat and lb_pvalue (plus bp_stat, bp_pvalue if boxpierce=True)."
+example = '''
+import numpy as np
+import pandas as pd
+from statsmodels.stats.diagnostic import acorr_ljungbox
+from statsmodels.tsa.arima.model import ARIMA
+
+rng = np.random.default_rng(38)
+n = 300
+values = np.zeros(n)
+for t in range(1, n):
+    values[t] = 0.6 * values[t - 1] + rng.normal()
+series = pd.Series(values, index=pd.date_range("2000-01-31", periods=n, freq="ME"))
+
+raw_test = acorr_ljungbox(series, lags=[10])
+residual_test = acorr_ljungbox(ARIMA(series, order=(1, 0, 0)).fit().resid, lags=[10], model_df=1)
+print(raw_test)
+print(residual_test)      # R: Box.test(resid, lag = 10, type = "Ljung-Box", fitdf = 1)
+assert raw_test["lb_pvalue"].iloc[0] < 0.01 and residual_test["lb_pvalue"].iloc[0] > 0.01
+'''
+caveats = [
+    "R's Box.test defaults to type = 'Box-Pierce' and lag = 1; acorr_ljungbox computes Ljung-Box (boxpierce=False) and you should always set lags explicitly.",
+    "Pass model_df = p + q when testing ARMA residuals (R: fitdf) to reduce the degrees of freedom.",
+    "Returns a DataFrame, not a test object: read .loc[lag, 'lb_pvalue'].",
+]
+see_also = ["acf-pacf", "arima", "stationarity-tests"]
+docs = "https://www.statsmodels.org/stable/generated/statsmodels.stats.diagnostic.acorr_ljungbox.html"
+
+[[entry]]
+id = "time-series-split"
+title = "Cross-validation folds and hold-out for time series in time order (no shuffling)"
+kind = "evaluate"
+library = "scikit-learn"
+import = "from sklearn.model_selection import TimeSeriesSplit"
+call = "TimeSeriesSplit(n_splits=5, test_size=12, gap=0).split(X)"
+aliases = ["time series cross validation", "time series split", "rolling origin", "walk forward validation", "expanding window cv", "backtesting", "tscv", "no shuffle split"]
+r = ["forecast::tsCV", "rsample::rolling_origin", "window", "caret::createTimeSlices"]
+inputs = "X (n, ...) in time order; n_splits; optional test_size, gap (samples dropped between train and test), max_train_size (sliding instead of expanding window)."
+returns = "Generator of (train_indices, test_indices); every train index precedes every test index. Also usable as cv= in cross_val_score / GridSearchCV."
+example = '''
+import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+
+rng = np.random.default_rng(39)
+n = 120
+signal = np.sin(np.arange(n) / 6) + rng.normal(scale=0.2, size=n)
+lagged_features = np.column_stack([np.roll(signal, 1), np.roll(signal, 2)])[2:]
+target = signal[2:]
+
+splitter = TimeSeriesSplit(n_splits=4, test_size=12)
+for fold, (train_idx, test_idx) in enumerate(splitter.split(lagged_features)):
+    print(f"fold {fold}: train 0..{train_idx[-1]}  test {test_idx[0]}..{test_idx[-1]}")
+    assert train_idx.max() < test_idx.min()               # never trains on the future
+
+scores = cross_val_score(Ridge(alpha=1.0), lagged_features, target, cv=splitter, scoring="neg_mean_squared_error")
+print("MSE per fold:", (-scores).round(3))
+
+# a single chronological hold-out: slice, do NOT use train_test_split(shuffle=True)
+split_point = int(len(target) * 0.8)
+X_train, X_test = lagged_features[:split_point], lagged_features[split_point:]
+'''
+caveats = [
+    "Rows must already be sorted by time; TimeSeriesSplit only uses row order, not dates.",
+    "Default is an EXPANDING training window (like tsCV / rolling_origin(cumulative = TRUE)); set max_train_size for a fixed-length sliding window.",
+    "sklearn's train_test_split shuffles by default -- for a single hold-out use train_test_split(..., shuffle=False) or plain slicing.",
+    "gap=k drops k samples between train and test to avoid leakage from lagged features.",
+]
+see_also = ["cross-val-score", "train-test-split", "arima"]
+docs = "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html"

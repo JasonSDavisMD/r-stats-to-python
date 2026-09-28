@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from psl.recipes.best_subset import best_subset
+from statsbench.recipes.best_subset import best_subset
 
 
 @pytest.fixture

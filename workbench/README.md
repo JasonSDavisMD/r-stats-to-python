@@ -1,177 +1,155 @@
-# PSL Workbench
+# statsbench
 
-A Python-first, RStudio-like workspace for **CS 598 Practical Statistical
-Learning**, opened in **VS Code on Windows**. You don't need to hunt across
-five documentation sites. You search one **task-to-tool catalog** from the
-terminal, and each result gives you the library, the exact import and call,
-whether the operation *fits*, *evaluates*, *optimizes* or *solves*, a runnable
-example, caveats (including R differences) and the official docs link.
+**Find and use the right Python call for a statistics or machine-learning
+task.** statsbench is a searchable, tested catalog that maps tasks (and their R
+names) to the Python scientific stack: NumPy, SciPy, SymPy, pandas,
+statsmodels, scikit-learn, Matplotlib/seaborn. Optional add-ons cover PyTorch,
+PyMC/ArviZ, XGBoost/LightGBM, pingouin and lifelines.
+
+[![Launch in Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/JasonSDavisMD/r-stats-to-python/main?urlpath=lab/tree/workbench/start-here.ipynb)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/JasonSDavisMD/r-stats-to-python)
 
 ```text
-> psl find "R plogis"
-1. expit  [SciPy | evaluate]  Inverse logit (logistic sigmoid): log-odds -> probability
-   from scipy.special import expit
-   expit(log_odds)
-   R: plogis, boot::inv.logit   recipe: examples/01_logistic_known_coefficients.py
-   docs: https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.expit.html
+$ stats find "R wilcox.test"
+1. mann-whitney  [SciPy | fit]  Mann-Whitney U / Wilcoxon rank-sum test ...
+   from scipy import stats
+   stats.mannwhitneyu(x, y, alternative="two-sided")
+   R: wilcox.test ...
 ```
 
-This is a workspace, not a new statistics engine. The analysis always uses
-NumPy, SciPy, SymPy, pandas, statsmodels and scikit-learn directly. The
-workbench adds a curated index, reproducible examples and a consistent setup.
+Each entry gives:
+* the library, the exact import and call, and what goes in and comes out;
+* its **operation kind** (fit / evaluate / optimize / solve / compute / visualize);
+* R equivalents, and **caveats where Python's defaults differ from R's**;
+* a runnable example and the official documentation link.
 
-> **Coming from RStudio?** Start with
-> **[docs/rstudio-users-start-here.md](docs/rstudio-users-start-here.md)**.
-> It covers the four-pane layout, key translations, and Positron.
+Every example runs in the test suite against the pinned library versions, so
+the catalog can't silently drift out of date.
 
-## 0. Try it in the browser first (GitHub Codespaces, no install)
+This is a toolkit, not a new statistics engine: your analysis always calls the
+underlying libraries directly.
 
-On the repository page, click **Code -> Codespaces -> Create codespace on main**.
-The dev container in `.devcontainer/` opens straight into `workbench/`,
-installs `uv`, builds `.venv` from `uv.lock`, adds the Python and Jupyter
-extensions, and runs the environment check. Then follow the four-pane
-steps in the RStudio guide.
+## Choose how to use it
 
-## 1. Windows setup (one time, about 5 minutes)
-
-**Primary path: `uv`.** `uv` installs the pinned Python version and the exact
-package versions from `uv.lock` into a project-local `.venv`.
-
-```powershell
-# 1. Install uv (PowerShell, no admin needed); then open a NEW terminal
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 2. Get the repository and create the environment
-git clone https://github.com/jasonsdavismd/r-stats-to-python.git
-cd r-stats-to-python\workbench
-uv sync                      # creates .venv with Python 3.12 + locked packages
-
-# 3. Verify
-uv run python -m psl.envcheck
-```
-
-Then in VS Code:
-
-1. **File -> Open Folder... -> `r-stats-to-python\workbench`**. Open this
-   folder itself, not the repository root, so the `.vscode` settings apply.
-2. Accept **"Install recommended extensions"**: Python, Pylance, Jupyter,
-   Python Environments, and optionally Data Wrangler.
-3. **Ctrl+Shift+P -> "Python: Select Interpreter" -> `.venv`**. In a notebook,
-   pick the same `.venv` from the kernel picker (top right).
-4. Open a **new** terminal (Ctrl+`). It activates `.venv` automatically. Run
-   `python -m psl.envcheck`. The first line must say `-- project .venv`.
-
-Run the same check in a notebook cell (`from psl.envcheck import main; main()`)
-to confirm the kernel and the terminal use the same interpreter.
-
-**Fallback without uv** (e.g. a locked-down machine), using pinned versions:
-
-```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.lock.txt
-python -m pip install -e . --no-deps
-```
-
-If PowerShell refuses to run `activate`, run
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
-
-## 2. Searching the toolbox
-
-| Command | What it does |
+| I want to... | Do this |
 |---|---|
-| `psl find "inverse logit"` | Ranked matches for a task, concept, or R name |
-| `psl find "logistic" --kind evaluate` | Only entries of one operation kind |
-| `psl show expit` | Full entry: inputs, returns, runnable example, caveats, docs |
-| `psl show expit --code` | Just the example code, ready to paste |
-| `psl r plogis` / `psl r` | R -> Python lookup / the full R table |
-| `psl list --topic trees` | Browse a topic |
-| `psl kinds` | fit vs evaluate vs optimize vs solve vs compute vs visualize |
+| Try it now, no account, nothing saved | Click **launch binder** above |
+| Do my own work in JupyterLab, privately | Follow **[docs/jupyterlab-guide.md](docs/jupyterlab-guide.md)** (private repository + Codespace, about 10 min once) |
+| Improve the toolkit itself | Click **Open in GitHub Codespaces** above (JupyterLab starts on port 8888), or clone locally (below) |
+| Use it in any existing project | `pip install "statsbench @ git+https://github.com/JasonSDavisMD/r-stats-to-python#subdirectory=workbench"` |
 
-The same search works in three other places:
+## Searching
 
-* **VS Code task:** Ctrl+Shift+P -> *Tasks: Run Task* -> **psl: find**. It
-  prompts for the query, so there's nothing to type in a shell.
-* **Inside a notebook:** `from psl.finder import find; find("best subset")`.
-* **Offline plain-text search:** Ctrl+Shift+F over `catalog/*.toml`. Every
-  entry is readable text.
+| Command (terminal) | In a notebook | What it does |
+|---|---|---|
+| `stats find "inverse logit"` | `find("inverse logit")` | Ranked matches for a task, concept or R name |
+| `stats find "logistic" --kind evaluate` | `find("logistic", kind="evaluate")` | Only one operation kind |
+| `stats show expit` | `find("expit")[0].entry.example` | Full entry with runnable example |
+| `stats r glm` / `stats r` | | R -> Python lookup / full table |
+| `stats list --topic survival` | | Browse a topic |
+| `stats kinds` | | What fit / evaluate / optimize / solve mean |
 
-`python -m psl ...` is equivalent to `psl ...` if the script isn't on PATH.
+In a notebook, import it first: `from statsbench.finder import find`.
+`python -m statsbench ...` is the same as `stats ...`.
 
-## 3. Layout
+## Topics
+
+Core (always installed): arrays and linear algebra, data frames, probability
+and distributions, hypothesis tests, agreement and diagnostic accuracy,
+regression, GLMs, advanced regression (mixed models, GEE, quantile, robust,
+ordinal), classification, model selection, trees, splines, unsupervised
+learning, more ML models, time series, survival (statsmodels), numerics
+(integration, ODEs, curve fitting, QMC), symbolic maths (SymPy), optimization,
+plotting.
+
+Optional add-ons (`uv sync --extra <name>` or `pip install "statsbench[<name>]"`):
+
+| Add-on | Libraries | Topics |
+|---|---|---|
+| `ml` | XGBoost, LightGBM | gradient boosting |
+| `deep` | PyTorch | tensors, autograd, neural networks |
+| `bayes` | PyMC, ArviZ | Bayesian models, MCMC, diagnostics |
+| `stats-extra` | pingouin, lifelines | ICC and effect sizes; Kaplan-Meier, Cox, AFT |
+| `all` | all of the above | |
+
+## Local setup (Windows, macOS, Linux)
+
+`uv` installs the pinned Python version and the exact package versions from `uv.lock`:
+
+```bash
+# install uv once: https://docs.astral.sh/uv/getting-started/installation/
+#   Windows PowerShell:  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+git clone https://github.com/JasonSDavisMD/r-stats-to-python.git
+cd r-stats-to-python/workbench
+uv sync --group lab                 # core + JupyterLab  (add --all-extras for every add-on)
+uv run python -m statsbench.envcheck
+uv run jupyter lab                  # or open the folder in VS Code / Positron
+```
+
+**Fallback without uv** (pinned core versions only):
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate              # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.lock.txt
+pip install -e . --no-deps
+```
+
+## Layout
 
 ```text
 workbench/
-  catalog/        one TOML file per course topic (the searchable index)
-  examples/       runnable "# %%" worked examples, one per seeded topic
-  templates/      exercise.ipynb and exercise.py: Given/Operation/Library/Code/Meaning/Check
-  coursework/     YOUR notebooks (git-ignored by default; see its README)
-  src/psl/
-    finder/       catalog loader, search ranking, CLI (independent of recipes)
-    recipes/      thin helpers only where no single library call exists
-    envcheck.py   interpreter/library/catalog check
-  docs/           VS Code workflow, operation kinds, adding a topic
-  tests/          catalog validity + every example executed, search, CLI, recipes
-  pyproject.toml / uv.lock / requirements.lock.txt   the one pinned environment
+  start-here.ipynb         first notebook (Binder opens this)
+  src/statsbench/
+    catalog/               one TOML file per topic: the searchable index
+    finder/                loader, search ranking, CLI (independent of recipes)
+    recipes/               thin helpers only where no single library call exists
+    envcheck.py            interpreter / library / add-on / catalog check
+  examples/                worked "# %%" examples (open as notebooks via Jupytext)
+  templates/
+    exercise.ipynb|.py     Given / Operation / Library / Code / Meaning / Check
+    private-workspace/     starter for YOUR private repository (see jupyterlab-guide)
+  docs/                    JupyterLab guide, VS Code/RStudio guides, operation kinds, contributing entries
+  tests/                   catalog validity + every example executed, search, CLI, recipes, notebooks
+  pyproject.toml / uv.lock / requirements.lock.txt
 ```
 
-## 4. Seeded examples
+## Worked examples
 
 | File | Topic | Operation kinds |
 |---|---|---|
 | `00_workflow_tour.py` | search -> help -> run -> inspect -> record | all |
 | `01_logistic_known_coefficients.py` | probabilities from given coefficients, strict `>` cutoff | evaluate |
-| `02_logistic_decision_boundary.py` | boundary with a zero coefficient; ties go to class 1 | solve, evaluate |
+| `02_logistic_decision_boundary.py` | boundary with a zero coefficient; ties to class 1 | solve, evaluate |
 | `03_logistic_nll_convexity.py` | GLM fit vs hand NLL + `minimize`; Hessian PSD | fit, evaluate, optimize |
 | `04_best_subset_mse.py` | best subset, train vs test MSE | fit, evaluate |
 | `05_regression_tree.py` | splits, leaf-mean predictions, CV over depth | fit, evaluate |
 | `06_lda_qda.py` | LDA/QDA fit and hand-computed discriminants | fit, evaluate |
 | `07_smoothing_spline.py` | penalty `lam`, GCV, roughness | fit, evaluate |
 
-Each example states **Given**, **Operation requested**, **Library choice**,
-**Code**, **What the output means** and **Validation check**, then ends in
-`assert` checks. All data are synthetic. There are no assignment answers.
+## More documentation
 
-## 5. Everyday workflow
+* [docs/jupyterlab-guide.md](docs/jupyterlab-guide.md): private workspace, daily routine, RStudio-style layout, add-ons
+* [docs/operation-kinds.md](docs/operation-kinds.md): fit vs evaluate vs optimize vs solve
+* [docs/adding-a-topic.md](docs/adding-a-topic.md): add or correct catalog entries
+* [docs/rstudio-users-start-here.md](docs/rstudio-users-start-here.md) and [docs/vscode-workflow.md](docs/vscode-workflow.md): for VS Code or Positron users
 
-See **[docs/vscode-workflow.md](docs/vscode-workflow.md)** for hover,
-signature help, go to definition, `?` and `help()`, the Variables pane and
-Data Viewer, the debugger, and the end-to-end question workflow.
-**[docs/operation-kinds.md](docs/operation-kinds.md)** explains the
-fit / evaluate / optimize / solve distinction that the catalog is organized around.
+## Tests
 
-## 6. Adding a topic or function
-
-Add an `[[entry]]` to a `catalog/*.toml` file (or create a new topic file),
-then run `pytest tests/test_catalog.py`. Steps and field reference:
-**[docs/adding-a-topic.md](docs/adding-a-topic.md)**. You never need to write
-a VS Code extension or edit a central program.
-
-## 7. Tests
-
-```powershell
-uv run pytest        # about 30 s; or the Testing sidebar / task "psl: run tests"
+```bash
+uv run pytest              # add --all-extras to the sync to include add-on entries
 ```
 
-The tests run every catalog example and every example script against the
-installed versions, with deprecation warnings treated as failures. When a
-library update renames an API, the tests catch it before it confuses you.
-
-## 8. Updating packages
-
-```powershell
-uv lock --upgrade    # re-resolve to newest allowed versions
-uv sync
-uv run pytest        # catalog examples verify the APIs still work
-uv export --format requirements-txt --no-dev --no-emit-project -o requirements.lock.txt
-```
+CI runs the core suite on Linux, Windows and macOS, and the add-on suite on
+Linux, for every pull request. Dependabot opens weekly update PRs, and the
+tests catch any library API change before it reaches the catalog.
 
 ## Limitations
 
-* The catalog covers the seeded course topics (72 entries). It grows as you add entries.
-* Search is lexical (words and names), not semantic. If a phrasing misses,
-  try an R name or a shorter query. Add the phrasing as an `aliases` item so
-  it hits next time.
-* The environment was verified on Linux with the locked versions. The Windows
-  steps follow the official uv and VS Code documentation. Report anything that
-  differs on your machine.
+* Search is lexical (words and names), not semantic. If a phrasing misses, try
+  an R name or fewer words. You can also add the phrasing as an alias
+  ([docs/adding-a-topic.md](docs/adding-a-topic.md)).
+* Coverage is broad but not exhaustive. Contributions are welcome
+  ([CONTRIBUTING](../CONTRIBUTING.MD)).
+* Optional add-ons are large. On Linux, PyTorch pulls CUDA libraries (several
+  GB), so install only the add-ons you need.

@@ -3,9 +3,9 @@
 #
 # The question-answering loop this workbench is built for:
 #
-# 1. **Search** the task:   terminal -> `psl find "inverse logit"`
-#    (or Ctrl+Shift+P -> "Tasks: Run Task" -> "psl: find").
-# 2. **Locate** the exact function: `psl show expit` prints import, call, example, docs.
+# 1. **Search** the task:   terminal -> `stats find "inverse logit"`
+#    (or Ctrl+Shift+P -> "Tasks: Run Task" -> "stats: find").
+# 2. **Locate** the exact function: `stats show expit` prints import, call, example, docs.
 # 3. **Inspect** its signature: hover over `expit` below, or put the cursor
 #    inside `expit(` and press Ctrl+Shift+Space. Run `help(expit)` in a cell.
 # 4. **Run** a minimal example: Shift+Enter on each `# %%` cell.
@@ -17,7 +17,7 @@
 # The same search is available inside Python, shown next.
 
 # %%
-from psl.finder import find
+from statsbench.finder import find
 
 for hit in find("R plogis", limit=3):
     print(f"{hit.entry.id:<32} {hit.entry.import_line.splitlines()[0]:<42} {hit.entry.call}")
